@@ -1,6 +1,17 @@
 import { useAuthors, useStats, useTags } from "../api/queries";
 import { formatBytes } from "../lib/format";
 
+const TYPE_LABELS: Record<string, string> = {
+  illust: "插画",
+  manga: "漫画",
+  ugoira: "动图",
+};
+
+const RESTRICT_LABELS: Record<string, string> = {
+  public: "公开收藏",
+  private: "私密收藏",
+};
+
 function Card({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-raised p-4">
@@ -59,7 +70,7 @@ export default function Stats() {
             {Object.entries(data.by_type).map(([type, count]) => (
               <div key={type} className="flex items-center justify-between">
                 <span className="text-text-muted">
-                  {type === "ugoira" ? "动图" : "插画"}
+                  {TYPE_LABELS[type] ?? type}
                 </span>
                 <span>{count.toLocaleString()}</span>
               </div>
@@ -67,7 +78,7 @@ export default function Stats() {
             {Object.entries(data.by_restrict).map(([restrict, count]) => (
               <div key={restrict} className="flex items-center justify-between">
                 <span className="text-text-muted">
-                  {restrict === "private" ? "私密收藏" : "公开收藏"}
+                  {RESTRICT_LABELS[restrict] ?? restrict}
                 </span>
                 <span>{count.toLocaleString()}</span>
               </div>

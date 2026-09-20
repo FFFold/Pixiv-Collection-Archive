@@ -5,7 +5,7 @@
 - 收藏顺序模型基于稀疏 rank + 位置快照（pixiv API 不提供单条收藏时间戳）
 - 元数据同步与图片下载解耦：先快速建立索引，再按范围分批下载原图
 - ugoira 动图保留原始 zip 并转码为 mp4
-- React WebUI：画廊 / 详情 / 下载队列 / 统计 / 导出（计划中）
+- React WebUI：画廊 / 详情 / 任务 / 统计 / 导出
 - 单容器 + SQLite，GHCR 镜像
 
 ## 状态
@@ -14,8 +14,8 @@
 - [x] 阶段 A：元数据同步（增量 / 全量 + rank 顺序 + 预览图）
 - [x] 阶段 B：图片下载（持久化队列 + 范围批次 + 原图 / ugoira / 缩略图）
 - [x] Web API（认证 / 画廊 / 详情与文件 / 任务与 SSE / 统计 / 导出）
-- [ ] 前端界面（计划 4b）
-- [ ] 发布
+- [x] WebUI（React 画廊 / 详情 / 任务 / 统计 / 导出）
+- [ ] 发布（compose 文档、GHCR 多架构镜像）
 
 ## 快速开始（开发）
 
@@ -116,10 +116,26 @@ docker compose up -d
 
 ### 启动 Web 服务
 
-```bash
+```powershell
 $env:AUTH_TOKEN = "your-token"   # 登录令牌，未设置时无法登录
+$env:PIXIV_PROXY = "http://127.0.0.1:7897"   # 需要代理时
 uv run python -m pixiv_archive
-# 打开 http://localhost:8000 （当前为占位页；接口文档见 /docs）
+# 打开 http://localhost:8000，输入令牌登录
+```
+
+前端开发模式（热更新，`/api` 自动代理到 8000）：
+
+```bash
+cd frontend
+npm install
+npm run dev          # http://localhost:5173
+```
+
+前端生产构建（产物输出到 `src/pixiv_archive/web/static/`，由 FastAPI 托管；Docker 构建会自动执行）：
+
+```bash
+cd frontend
+npm run build
 ```
 
 主要接口：

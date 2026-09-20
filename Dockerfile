@@ -2,6 +2,14 @@
 
 FROM ghcr.io/astral-sh/uv:0.8 AS uv-bin
 
+FROM node:22-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+# Build directly into the backend package so the runtime image needs one copy
+RUN npm run build
+
 FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

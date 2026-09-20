@@ -10,3 +10,5 @@ __pycache__
 docs
 .superpowers
 tests
+frontend/node_modules
+frontend/dist
