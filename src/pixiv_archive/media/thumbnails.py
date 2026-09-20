@@ -28,8 +28,9 @@ def generate_thumb(src: Path, dest: Path, *, long_edge: int = THUMB_LONG_EDGE) -
     """Create a WebP thumbnail; returns False when the source is unusable."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with Image.open(src) as image:
-            image.load()
+        with Image.open(src) as opened:
+            opened.load()
+            image: Image.Image = opened
             if image.mode not in ("RGB", "RGBA"):
                 image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
             else:
