@@ -1,6 +1,6 @@
 [project]
 name = "pixiv-archive"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sync and archive your pixiv collection with correct bookmark ordering"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
