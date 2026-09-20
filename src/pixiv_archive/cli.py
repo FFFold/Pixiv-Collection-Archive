@@ -104,6 +104,7 @@ def _report_sync(result: SyncResult) -> None:
     print(
         f"[{result.kind}] {result.status}: "
         f"新增 {result.new_count}，取消 {result.unbookmarked_count}，"
+        f"失效 {result.deleted_count}，"
         f"rank 修正 {result.rank_rebuilt_count}，"
         f"页数 {result.pages_fetched}，"
         f"预览图 {result.previews_fetched}（失败 {result.previews_failed}），"

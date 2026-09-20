@@ -70,6 +70,7 @@ async def start_sync(
                 "status": result.status,
                 "new_count": result.new_count,
                 "unbookmarked_count": result.unbookmarked_count,
+                "deleted_count": result.deleted_count,
                 "rank_rebuilt_count": result.rank_rebuilt_count,
                 "pages_fetched": result.pages_fetched,
                 "previews_fetched": result.previews_fetched,

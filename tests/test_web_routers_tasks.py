@@ -55,6 +55,7 @@ async def test_sync_endpoint_starts_task(client, monkeypatch):
         status = "completed"
         new_count = 3
         unbookmarked_count = 0
+        deleted_count = 0
         rank_rebuilt_count = 0
         pages_fetched = 2
         previews_fetched = 3
@@ -157,6 +158,7 @@ async def test_duplicate_sync_rejected(client, monkeypatch):
                     "status": "completed",
                     "new_count": 0,
                     "unbookmarked_count": 0,
+                    "deleted_count": 0,
                     "rank_rebuilt_count": 0,
                     "pages_fetched": 0,
                     "previews_fetched": 0,

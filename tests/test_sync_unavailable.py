@@ -6,7 +6,7 @@ from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import DownloadJob, Illust, IllustPage
 from pixiv_archive.db.repo import bookmarks, downloads, illusts
 from pixiv_archive.media.storage import WorksStorage
-from pixiv_archive.sync.orchestrator import MetadataSyncService
+from pixiv_archive.sync.orchestrator import MetadataSyncService, SyncResult
 from pixiv_archive.sync.unavailable import is_unavailable
 
 
@@ -194,6 +194,23 @@ async def test_incremental_marks_new_stub_as_deleted(db, tmp_path):
         row = await session.get(Illust, 9)
     assert row.state == "deleted"
     assert row.page_count == 0
+
+
+def test_cli_report_mentions_deleted_count(capsys):
+    from pixiv_archive.cli import _report_sync
+
+    _report_sync(
+        SyncResult(
+            run_id=1,
+            kind="full",
+            status="completed",
+            new_count=2,
+            unbookmarked_count=3,
+            deleted_count=4,
+        )
+    )
+    out = capsys.readouterr().out
+    assert "失效 4" in out
 
 
 async def test_incremental_does_not_move_rank_of_known_deleted_work(db, tmp_path):
