@@ -19,7 +19,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 COPY --from=uv-bin /uv /uvx /bin/
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl \
+    && apt-get install -y --no-install-recommends ffmpeg curl gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies layer: only pyproject + lock so it stays cached across code changes
@@ -29,16 +29,18 @@ RUN uv sync --frozen --no-dev --no-install-project
 # Application layer
 COPY src ./src
 COPY alembic.ini README.md ./
-RUN uv sync --frozen --no-dev
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN uv sync --frozen --no-dev \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 RUN useradd --create-home --uid 1000 appuser \
     && mkdir -p /data \
     && chown -R appuser:appuser /data /app
-USER appuser
 ENV PATH="/app/.venv/bin:$PATH" \
     DATA_DIR=/data
 EXPOSE 8000
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["sh", "-c", "alembic upgrade head && python -m pixiv_archive"]
