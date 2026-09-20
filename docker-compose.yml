@@ -1,7 +1,9 @@
 services:
   app:
+    # Prebuilt multi-arch image (linux/amd64, linux/arm64) from GHCR.
+    # `docker compose build` still works if you prefer building locally.
+    image: ghcr.io/fffold/pixiv-collection-archive:latest
     build: .
-    image: ghcr.io/OWNER/pixiv-collection-archive:latest
     container_name: pixiv-archive
     restart: unless-stopped
     ports:
@@ -10,6 +12,12 @@ services:
       - .env
     environment:
       DATA_DIR: /data
-      TZ: Asia/Shanghai
+      TZ: ${TZ:-Asia/Shanghai}
     volumes:
       - ./data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
