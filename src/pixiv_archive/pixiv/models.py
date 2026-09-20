@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,9 +38,9 @@ class Illust(BaseModel):
     create_date: datetime | None = None
     user: PixivUser
     tags: list[PixivTag] = Field(default_factory=list)
-    meta_single_page: dict = Field(default_factory=dict)
-    meta_pages: list[dict] = Field(default_factory=list)
-    image_urls: dict = Field(default_factory=dict)
+    meta_single_page: dict[str, Any] = Field(default_factory=dict)
+    meta_pages: list[dict[str, Any]] = Field(default_factory=list)
+    image_urls: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def author(self) -> PixivUser:
@@ -94,7 +95,7 @@ class UgoiraMetadata(BaseModel):
     frames: list[UgoiraFrame] = Field(default_factory=list)
 
     @classmethod
-    def from_response(cls, payload: dict) -> "UgoiraMetadata":
+    def from_response(cls, payload: dict[str, Any]) -> "UgoiraMetadata":
         meta = payload.get("ugoira_metadata") or {}
         zip_urls = meta.get("zip_urls") or {}
         return cls(

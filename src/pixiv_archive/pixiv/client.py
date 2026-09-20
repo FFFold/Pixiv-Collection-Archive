@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from typing import Any
+
 import httpx
 
 from pixiv_archive.pixiv.auth import APP_HEADERS, TokenProvider
@@ -29,7 +32,7 @@ class PixivClient:
         *,
         proxy: str | None = None,
         min_interval_ms: int = 800,
-        on_refresh_token=None,
+        on_refresh_token: Callable[[str], None] | None = None,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self.user_id = user_id
@@ -50,8 +53,10 @@ class PixivClient:
     async def get_access_token_for_test(self) -> str:
         return await self._tokens.get_access_token()
 
-    async def _request(self, method: str, url: str, *, params: dict | None = None) -> dict:
-        async def _once() -> dict:
+    async def _request(
+        self, method: str, url: str, *, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        async def _once() -> dict[str, Any]:
             await self._limiter.acquire()
             token = await self._tokens.get_access_token()
             headers = dict(APP_HEADERS)
@@ -77,8 +82,8 @@ class PixivClient:
             if response.status_code >= 400:
                 raise PixivError(f"HTTP {response.status_code}: {response.text[:200]}")
 
-            payload = response.json()
-            if isinstance(payload, dict) and payload.get("error"):
+            payload: dict[str, Any] = response.json()
+            if payload.get("error"):
                 raise PixivError(str(payload["error"])[:300])
             return payload
 

@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -16,7 +17,7 @@ class Database:
         self.engine = create_async_engine(f"sqlite+aiosqlite:///{self.path}")
 
         @event.listens_for(self.engine.sync_engine, "connect")
-        def _set_pragma(dbapi_conn, _record):  # pragma: no cover - driver level
+        def _set_pragma(dbapi_conn: Any, _record: Any) -> None:  # pragma: no cover - driver level
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")

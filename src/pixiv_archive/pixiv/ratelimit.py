@@ -2,11 +2,8 @@ import asyncio
 import random
 import time
 from collections.abc import Awaitable, Callable
-from typing import TypeVar
 
 from pixiv_archive.pixiv.errors import NetworkError, NotFoundError, PixivError, RateLimited
-
-T = TypeVar("T")
 
 
 class RateLimiter:
@@ -27,7 +24,7 @@ class RateLimiter:
             self._last_at = time.monotonic()
 
 
-async def retry_async(
+async def retry_async[T](
     operation: Callable[[], Awaitable[T]],
     *,
     attempts: int = 3,

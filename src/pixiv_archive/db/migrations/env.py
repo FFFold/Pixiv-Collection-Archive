@@ -1,5 +1,6 @@
 import asyncio
 from logging.config import fileConfig
+from typing import Any
 
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -16,7 +17,7 @@ target_metadata = Base.metadata
 
 
 def _database_url() -> str:
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings = Settings(_env_file=None)
     return f"sqlite+aiosqlite:///{settings.db_path}"
 
 
@@ -31,14 +32,14 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def _do_run_migrations(connection) -> None:
+def _do_run_migrations(connection: Any) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
         context.run_migrations()
 
 
 async def run_migrations_online() -> None:
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings = Settings(_env_file=None)
     settings.ensure_dirs()
     engine = create_async_engine(_database_url())
     async with engine.connect() as connection:

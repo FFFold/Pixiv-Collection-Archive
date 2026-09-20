@@ -2,12 +2,8 @@ import os
 import subprocess
 import sys
 
-from sqlalchemy import text
 
-from pixiv_archive.db.engine import Database
-
-
-async def test_migrations_create_schema(tmp_path):
+def test_migrations_create_schema(tmp_path):
     db_file = tmp_path / "archive.db"
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -23,12 +19,17 @@ async def test_migrations_create_schema(tmp_path):
     )
     assert result.returncode == 0, result.stderr
 
-    db = Database(db_file)
-    async with db.session() as session:
-        rows = await session.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-        )
-        names = {r[0] for r in rows}
-    await db.dispose()
+    names = _table_names(db_file)
     assert {"illust", "author", "bookmark", "app_setting"} <= names
     assert "alembic_version" in names
+
+
+def _table_names(db_file) -> set[str]:
+    import sqlite3
+
+    conn = sqlite3.connect(db_file)
+    try:
+        rows = conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+    finally:
+        conn.close()
+    return {r[0] for r in rows}

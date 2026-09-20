@@ -5,7 +5,7 @@ from pixiv_archive.config import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    settings = settings or Settings(_env_file=None)  # type: ignore[call-arg]
+    settings = settings or Settings(_env_file=None)
     settings.ensure_dirs()
 
     app = FastAPI(title="Pixiv Archive", version=__version__)

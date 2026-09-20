@@ -11,9 +11,7 @@ from pixiv_archive.pixiv.client import (
 )
 from pixiv_archive.pixiv.errors import NotFoundError, PixivError
 
-TOKEN_RESPONSE = {
-    "response": {"access_token": "tok", "expires_in": 3600, "refresh_token": "r"}
-}
+TOKEN_RESPONSE = {"response": {"access_token": "tok", "expires_in": 3600, "refresh_token": "r"}}
 
 
 def _bookmark_page(ids: list[int], cursor: int | None = None) -> dict:
