@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     api_min_interval_ms: int = Field(default=800, validation_alias="API_MIN_INTERVAL_MS")
     image_concurrency: int = Field(default=4, validation_alias="IMAGE_CONCURRENCY")
     download_previews: bool = Field(default=True, validation_alias="DOWNLOAD_PREVIEWS")
+    ffmpeg_bin: str = Field(default="ffmpeg", validation_alias="FFMPEG_BIN")
 
     @property
     def db_path(self) -> Path:

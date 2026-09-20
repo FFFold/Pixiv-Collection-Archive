@@ -7,6 +7,7 @@ import httpx
 
 from pixiv_archive.config import Settings
 from pixiv_archive.db.engine import Database
+from pixiv_archive.download.worker import DownloadWorker, DownloadWorkerConfig
 from pixiv_archive.media.downloader import ImageDownloader
 from pixiv_archive.media.storage import WorksStorage
 from pixiv_archive.pixiv.client import PixivClient
@@ -93,3 +94,29 @@ def _find_alembic_ini() -> Path | None:
 
 def _script_location(ini_path: Path) -> Path:
     return (ini_path.parent / "src" / "pixiv_archive" / "db" / "migrations").resolve()
+
+
+@asynccontextmanager
+async def open_download_worker(settings: Settings) -> AsyncIterator[DownloadWorker]:
+    """Build a DownloadWorker with a shared HTTP client, cleaning up afterwards."""
+    await _ensure_schema(settings)
+    db = Database(settings.db_path)
+    image_client = httpx.AsyncClient(proxy=settings.pixiv_proxy, timeout=60.0)
+    worker = DownloadWorker(
+        db=db,
+        storage=WorksStorage(settings.works_dir),
+        downloader=ImageDownloader(
+            image_client,
+            mirror=settings.pixiv_image_mirror,
+            concurrency=settings.image_concurrency,
+        ),
+        config=DownloadWorkerConfig(
+            concurrency=settings.image_concurrency,
+            ffmpeg_bin=settings.ffmpeg_bin,
+        ),
+    )
+    try:
+        yield worker
+    finally:
+        await image_client.aclose()
+        await db.dispose()
