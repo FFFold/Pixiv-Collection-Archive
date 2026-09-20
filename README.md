@@ -8,6 +8,18 @@
 - React WebUI：画廊 / 详情 / 任务 / 统计 / 导出
 - 单容器 + SQLite，GHCR 镜像
 
+<!-- 截图占位：把图片放到 docs/screenshots/ 后取消注释对应行
+## 界面预览
+
+| 画廊 | 作品详情 |
+| --- | --- |
+| ![画廊](docs/screenshots/gallery.png) | ![详情](docs/screenshots/detail.png) |
+
+| 任务与实时进度 | 统计 |
+| --- | --- |
+| ![任务](docs/screenshots/tasks.png) | ![统计](docs/screenshots/stats.png) |
+-->
+
 ## 状态
 
 - [x] 项目基础 + pixiv API 层
@@ -15,7 +27,7 @@
 - [x] 阶段 B：图片下载（持久化队列 + 范围批次 + 原图 / ugoira / 缩略图）
 - [x] Web API（认证 / 画廊 / 详情与文件 / 任务与 SSE / 统计 / 导出）
 - [x] WebUI（React 画廊 / 详情 / 任务 / 统计 / 导出）
-- [ ] 发布（compose 文档、GHCR 多架构镜像）
+- [x] 发布（compose 文档、GHCR 多架构镜像）
 
 ## 快速开始（开发）
 
@@ -89,14 +101,39 @@ $DATA_DIR/works/{pid}/
 
 ## Docker
 
-镜像由 GitHub Actions 构建并推送至 GHCR：
+镜像由 GitHub Actions 构建并推送至 GHCR，支持 `linux/amd64` 与 `linux/arm64`：
 
 ```bash
-docker pull ghcr.io/fffold/pixiv-collection-archive:latest
+# 1. 准备配置
+cp .env.example .env
+#    至少填写：PIXIV_REFRESH_TOKEN / PIXIV_USER_ID / AUTH_TOKEN
+#    需要代理时填写 PIXIV_PROXY（容器内可用 host.docker.internal:7897）
+
+# 2. 启动（使用 GHCR 预构建镜像）
 docker compose up -d
+
+# 3. 打开 http://<主机>:8000，用 AUTH_TOKEN 登录
 ```
 
-数据保存在 `./data`（SQLite + 原图 + 缩略图）。
+本地构建镜像（不拉 GHCR）：
+
+```bash
+docker compose up -d --build
+```
+
+镜像内已包含 ffmpeg（ugoira 转码）与构建好的前端。数据全部保存在 `./data`
+（SQLite + 原图 + 缩略图 + 转码结果 + 导出包），升级镜像不会影响数据。
+
+常用运维命令：
+
+```bash
+docker compose logs -f app          # 查看日志
+docker compose restart app          # 重启
+docker compose pull && docker compose up -d   # 升级到最新镜像
+```
+
+发布流程：推送 `v*` tag 后 `docker.yml` 会自动构建多架构镜像（tag `vX.Y.Z`、
+`major.minor`、`latest`）并执行冒烟测试（健康检查 / 前端外壳 / 登录 / 画廊）。
 
 ## 配置
 
@@ -160,3 +197,4 @@ npm run build
 
 - 设计文档：`docs/superpowers/specs/2026-09-20-pixiv-collection-archive-design.md`
 - 实施计划：`docs/superpowers/plans/`
+
