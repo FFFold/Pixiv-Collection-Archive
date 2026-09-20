@@ -30,3 +30,9 @@ export const R18_OPTIONS = [
   { value: "0", label: "全年龄" },
   { value: "1", label: "R-18" },
 ] as const;
+
+export const STATUS_OPTIONS = [
+  { value: "active", label: "仅正常" },
+  { value: "all", label: "全部状态" },
+  { value: "deleted", label: "已失效" },
+] as const;

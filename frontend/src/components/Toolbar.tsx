@@ -4,6 +4,7 @@ import {
   R18_OPTIONS,
   RESTRICT_OPTIONS,
   SORT_OPTIONS,
+  STATUS_OPTIONS,
   TYPE_OPTIONS,
 } from "../lib/constants";
 
@@ -99,6 +100,23 @@ export default function Toolbar({
             offset: 0,
           })
         }
+      />
+      <Select
+        ariaLabel="状态"
+        value={query.only_deleted ? "deleted" : query.include_deleted ? "all" : "active"}
+        options={STATUS_OPTIONS}
+        onChange={(value) => {
+          const patch: Partial<GalleryQuery> = {
+            only_deleted: value === "deleted" ? true : undefined,
+            include_deleted: value === "all" ? true : undefined,
+            offset: 0,
+          };
+          if (value === "active") {
+            delete patch.only_deleted;
+            delete patch.include_deleted;
+          }
+          onChange(patch);
+        }}
       />
 
       <input

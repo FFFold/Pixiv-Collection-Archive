@@ -25,6 +25,7 @@ const ITEM: GalleryItem = {
   thumb_url: "/api/illust/123456/thumb",
   restrict: "public",
   unbookmarked: false,
+  state: "active",
 };
 
 function renderCard(item: GalleryItem, selected = false, onToggle = () => undefined) {

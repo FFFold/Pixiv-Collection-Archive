@@ -17,6 +17,7 @@ export interface GalleryItem {
   thumb_url: string;
   restrict: "public" | "private" | string;
   unbookmarked: boolean;
+  state: string;
 }
 
 export interface GalleryResponse {
@@ -124,6 +125,8 @@ export interface GalleryQuery {
   restrict?: "public" | "private";
   only_unbookmarked?: boolean;
   include_unbookmarked?: boolean;
+  only_deleted?: boolean;
+  include_deleted?: boolean;
   rank_start?: number;
   rank_count?: number;
 }
