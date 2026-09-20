@@ -29,6 +29,21 @@ class Settings(BaseSettings):
         return self.data_dir / "archive.db"
 
     @property
+    def session_secret(self) -> str:
+        """Persistent session signing key, generated on first use."""
+        from secrets import token_urlsafe
+
+        secret_file = self.data_dir / "session.secret"
+        if secret_file.exists():
+            value = secret_file.read_text("utf-8").strip()
+            if value:
+                return value
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        value = token_urlsafe(48)
+        secret_file.write_text(value, encoding="utf-8")
+        return value
+
+    @property
     def works_dir(self) -> Path:
         return self.data_dir / "works"
 
