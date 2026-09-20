@@ -149,7 +149,7 @@ async def create_placeholder_illust(session: AsyncSession, *, pid: int) -> None:
     author = insert(Author).values(id=0, name="", account="")
     author = author.on_conflict_do_nothing(index_elements=[Author.id])
     await session.execute(author)
-    stmt = insert(Illust).values(pid=pid, author_id=0, state="deleted")
+    stmt = insert(Illust).values(pid=pid, author_id=0, state="deleted", page_count=0)
     stmt = stmt.on_conflict_do_nothing(index_elements=[Illust.pid])
     await session.execute(stmt)
 

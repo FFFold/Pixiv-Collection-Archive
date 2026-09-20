@@ -6,15 +6,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import utcnow
-from pixiv_archive.db.repo import bookmarks, illusts, sync_runs
+from pixiv_archive.db.repo import bookmarks, downloads, illusts, sync_runs
 from pixiv_archive.media.downloader import ImageDownloader
 from pixiv_archive.media.storage import WorksStorage
 from pixiv_archive.pixiv.client import PixivClient
 from pixiv_archive.pixiv.errors import PixivError
 from pixiv_archive.pixiv.models import Illust as PixivIllust
 from pixiv_archive.sync import rank as rank_mod
+from pixiv_archive.sync.unavailable import is_unavailable
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,7 @@ class SyncResult:
     pages_fetched: int = 0
     new_count: int = 0
     unbookmarked_count: int = 0
+    deleted_count: int = 0
     rank_rebuilt_count: int = 0
     previews_fetched: int = 0
     previews_failed: int = 0
@@ -212,20 +216,27 @@ class MetadataSyncService:
             async with self._db.session() as session:
                 for illust, restrict, pos in listed:
                     try:
+                        rank_value = rank_mod.full_rank(pos)
+                        if is_unavailable(illust):
+                            deleted = await self._handle_unavailable(
+                                session, illust, restrict=restrict, rank=rank_value
+                            )
+                            if deleted:
+                                result.deleted_count += 1
+                            continue
                         await illusts.upsert_illust(
                             session, illust, meta_json=self._meta_json(illust)
                         )
-                        new_rank = rank_mod.full_rank(pos)
                         was_known = illust.pid in known_pids
                         await bookmarks.set_active_rank(
                             session,
                             pid=illust.pid,
                             restrict=restrict,
-                            rank=new_rank,
+                            rank=rank_value,
                             now=now,
                         )
                         if was_known:
-                            if old_ranks.get(illust.pid) != new_rank:
+                            if old_ranks.get(illust.pid) != rank_value:
                                 result.rank_rebuilt_count += 1
                         else:
                             result.new_count += 1
@@ -252,6 +263,26 @@ class MetadataSyncService:
             raise
         await self._finish(result, started)
         return result
+
+    async def _handle_unavailable(
+        self, session: AsyncSession, illust: PixivIllust, *, restrict: str, rank: int
+    ) -> bool:
+        """Mark a pixiv stub as deleted, creating a bookmark-only row if new.
+
+        Existing metadata, original URLs and downloaded files are left alone;
+        only the state flag and bookmark position are written.
+        """
+        known = await illusts.get_illust_state(session, illust.pid) is not None
+        if known:
+            changed = await illusts.mark_illust_deleted(session, illust.pid)
+        else:
+            await illusts.create_placeholder_illust(session, pid=illust.pid)
+            changed = True
+        await bookmarks.set_active_rank(
+            session, pid=illust.pid, restrict=restrict, rank=rank, now=utcnow()
+        )
+        await downloads.skip_jobs_for_pid(session, illust.pid)
+        return changed
 
     async def _finalize(
         self,

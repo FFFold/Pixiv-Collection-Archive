@@ -1,10 +1,12 @@
 import pytest
 from sqlalchemy import select
 
-from fakes import make_illust, make_stub_illust
+from fakes import FakeClient, FakeDownloader, make_illust, make_stub_illust, page
 from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import DownloadJob, Illust, IllustPage
 from pixiv_archive.db.repo import downloads, illusts
+from pixiv_archive.media.storage import WorksStorage
+from pixiv_archive.sync.orchestrator import MetadataSyncService
 from pixiv_archive.sync.unavailable import is_unavailable
 
 
@@ -75,3 +77,76 @@ async def test_skip_pending_and_failed_jobs_for_pid(db):
     assert by_target["000_p0.jpg"] == "skipped"
     assert by_target["thumb.webp"] == "skipped"
     assert by_target["001_p1.jpg"] == "done"
+
+
+def build_service(db, tmp_path, client, downloader) -> MetadataSyncService:
+    return MetadataSyncService(
+        db=db,
+        client=client,
+        storage=WorksStorage(tmp_path / "works"),
+        downloader=downloader,
+        download_previews=True,
+    )
+
+
+async def test_full_sync_marks_stub_deleted_and_skips_side_effects(db, tmp_path):
+    client = FakeClient({"public": [page([make_stub_illust(1)], cursor=None)], "private": []})
+    downloader = FakeDownloader()
+    result = await build_service(db, tmp_path, client, downloader).run_full()
+
+    assert result.deleted_count == 1
+    assert result.new_count == 0
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert row.state == "deleted"
+    assert row.title == ""
+    assert row.page_count == 0
+    assert downloader.urls == []
+    assert not (tmp_path / "works" / "1" / "meta.json").exists()
+    async with db.session() as session:
+        pages = (await session.execute(select(IllustPage))).scalars().all()
+    assert pages == []
+
+
+async def test_full_sync_deleting_keeps_existing_metadata_and_files(db, tmp_path):
+    setup = FakeClient(
+        {"public": [page([make_illust(1, title="original")], cursor=None)], "private": []}
+    )
+    await build_service(db, tmp_path, setup, FakeDownloader()).run_full()
+    storage = WorksStorage(tmp_path / "works")
+    assert storage.preview_path(1).exists()
+
+    stub = FakeClient({"public": [page([make_stub_illust(1)], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, stub, FakeDownloader()).run_full()
+
+    assert result.deleted_count == 1
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert row.state == "deleted"
+    assert row.title == "original"
+    assert storage.preview_path(1).exists()
+    assert await original_url_for(db, 1) == "https://i.pximg.net/1.jpg"
+
+
+async def test_full_sync_restores_work_that_came_back(db, tmp_path):
+    stub = FakeClient({"public": [page([make_stub_illust(1)], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, stub, FakeDownloader()).run_full()
+    assert result.deleted_count == 1
+
+    alive = FakeClient({"public": [page([make_illust(1, title="back")], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, alive, FakeDownloader()).run_full()
+
+    assert result.deleted_count == 0
+    assert result.new_count == 0
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert row.state == "active"
+    assert row.title == "back"
+
+
+async def original_url_for(db, pid: int) -> str:
+    async with db.session() as session:
+        row = (
+            await session.execute(select(IllustPage).where(IllustPage.pid == pid))
+        ).scalar_one()
+    return row.original_url
