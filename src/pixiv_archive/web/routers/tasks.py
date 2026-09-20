@@ -150,4 +150,3 @@ async def events(
 ) -> StreamingResponse:
     queue = bus.subscribe(replay=True)
     return StreamingResponse(event_stream(bus, queue), media_type="text/event-stream")
-
