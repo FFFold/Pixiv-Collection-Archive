@@ -50,6 +50,7 @@ files = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+pythonpath = ["tests"]
 markers = [
     "integration: tests that call the real pixiv API (requires PIXIV_REFRESH_TOKEN and network)",
 ]
