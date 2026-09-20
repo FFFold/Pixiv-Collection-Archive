@@ -13,7 +13,8 @@
 - [x] 项目基础 + pixiv API 层
 - [x] 阶段 A：元数据同步（增量 / 全量 + rank 顺序 + 预览图）
 - [x] 阶段 B：图片下载（持久化队列 + 范围批次 + 原图 / ugoira / 缩略图）
-- [ ] Web API 与前端
+- [x] Web API（认证 / 画廊 / 详情与文件 / 任务与 SSE / 统计 / 导出）
+- [ ] 前端界面（计划 4b）
 - [ ] 发布
 
 ## 快速开始（开发）
@@ -112,6 +113,33 @@ docker compose up -d
 | `API_MIN_INTERVAL_MS` | API 串行最小间隔（防风控） | `800` |
 | `IMAGE_CONCURRENCY` | 图片下载并发 | `4` |
 
+
+### 启动 Web 服务
+
+```bash
+$env:AUTH_TOKEN = "your-token"   # 登录令牌，未设置时无法登录
+uv run python -m pixiv_archive
+# 打开 http://localhost:8000 （当前为占位页；接口文档见 /docs）
+```
+
+主要接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/auth/login` | 用 `AUTH_TOKEN` 换取 session cookie |
+| GET | `/api/gallery` | 画廊（排序 / 过滤 / 搜索 / 分页，含显示序号） |
+| GET | `/api/illust/{pid}` | 作品详情（含页状态、标签、动图信息） |
+| GET | `/api/illust/{pid}/file/{page}` | 原图（支持 Range 与 ETag） |
+| GET | `/api/illust/{pid}/thumb` | 缩略图（本地 WebP 优先，回退预览图/占位） |
+| GET | `/api/illust/{pid}/animation` | ugoira 转码后的 mp4 |
+| POST | `/api/sync` | 触发阶段 A（`mode=incremental\|full`） |
+| POST | `/api/downloads` | 触发阶段 B（scope: all_missing/author/selected/rank-range/filter） |
+| GET | `/api/tasks` | 任务列表与状态（可取消） |
+| GET | `/api/events` | SSE 实时进度事件流 |
+| GET | `/api/stats` | 统计（数量 / 页状态 / 体积） |
+| POST | `/api/export` | 导出 zip（JSON 元数据 / 原图） |
+
+定时同步由服务内置调度器负责（`SYNC_INTERVAL`，可选 `SYNC_FULL_CRON`）。
 ## 文档
 
 - 设计文档：`docs/superpowers/specs/2026-09-20-pixiv-collection-archive-design.md`
