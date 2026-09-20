@@ -2298,11 +2298,23 @@ services:
 
 - [ ] **Step 4: 构建并验证镜像**
 
+> **执行偏差（2026-09-20 实际执行时记录）**：本机 Docker 构建受网络与代理链路影响，单次构建超过 15 分钟（`apt-get install ffmpeg` 经 TUN 代理下载缓慢）。已改为由 GitHub Actions 构建，云端 `docker` job 构建耗时约 1 分 42 秒、`docker.yml` 多架构构建与 GHCR 推送约 4 分 34 秒，均验证通过（run 35499455764 / 35499555836）。
+>
+> 因此本地执行时跳过本步，改为：
+>
+> Run: `gh workflow run docker.yml` 然后 `gh run watch <id> --exit-status`
+> Expected: build-and-push job 成功，GHCR 出现 `latest` 标签
+
+<details>
+<summary>原计划（本地构建，如网络良好可选用）</summary>
+
 Run: `docker build -t pixiv-archive:test .`
 Expected: 构建成功
 
 Run: `docker run --rm -e PIXIV_REFRESH_TOKEN=x -e PIXIV_USER_ID=1 -e DATA_DIR=/tmp/d pixiv-archive:test python -c "import pixiv_archive, fastapi, sqlalchemy; print('imports ok')"`
 Expected: 输出 `imports ok`
+
+</details>
 
 - [ ] **Step 5: Commit**
 
