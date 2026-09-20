@@ -1,3 +1,3 @@
-from pixiv_archive.web.routers import auth, gallery, illust
+from pixiv_archive.web.routers import auth, gallery, illust, tasks
 
-__all__ = ["auth", "gallery", "illust"]
+__all__ = ["auth", "gallery", "illust", "tasks"]
