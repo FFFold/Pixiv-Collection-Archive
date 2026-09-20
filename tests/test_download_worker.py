@@ -8,7 +8,7 @@ from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import Author, Bookmark, Illust, IllustPage, UgoiraMeta
 from pixiv_archive.db.repo import downloads
 from pixiv_archive.download.scope import DownloadScope
-from pixiv_archive.download.worker import DownloadWorker, DownloadWorkerConfig
+from pixiv_archive.download.worker import DownloadReport, DownloadWorker, DownloadWorkerConfig
 from pixiv_archive.media.storage import WorksStorage
 
 
@@ -212,6 +212,30 @@ async def test_worker_skips_thumbs_when_disabled(db, tmp_path):
         jobs = (await session.execute(select(downloads.DownloadJob))).scalars().all()
         statuses = {job.kind: job.status for job in jobs}
     assert statuses["thumb"] == "skipped"
+
+
+async def test_worker_transcodes_ugoira_even_when_zip_job_runs_later(db, tmp_path):
+    """The mp4 job must not depend on the zip job having run first."""
+    await _seed(db, 11, pages=1, type_="ugoira")
+    downloader = FakeDownloader()
+    calls: list[dict] = []
+
+    async def fake_transcode(**kwargs) -> bool:
+        calls.append(kwargs)
+        assert kwargs["zip_path"].exists(), "zip must be fetched on demand"
+        kwargs["dest"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["dest"].write_bytes(b"mp4")
+        return True
+
+    worker = make_worker(db, tmp_path, downloader, transcode=fake_transcode)
+    # only enqueue the mp4 job, simulating it being claimed before the zip job
+    from pixiv_archive.media.storage import WorksStorage as _Storage
+
+    storage = _Storage(tmp_path / "works")
+    storage.work_dir(11).mkdir(parents=True, exist_ok=True)
+    await worker._handle_ugoira_mp4(11, "animation.mp4", DownloadReport(batch_id=1))
+    assert len(calls) == 1
+    assert storage.animation_path(11).exists()
 
 
 async def test_worker_retry_failed_resets_jobs(db, tmp_path):

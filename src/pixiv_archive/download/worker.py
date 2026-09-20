@@ -64,6 +64,14 @@ class DownloadWorker:
         self._config = config or DownloadWorkerConfig()
         self._transcode = self._config.transcode
         self._thumbs_enabled = True
+        self._per_pid_locks: dict[int, asyncio.Lock] = {}
+
+    def _pid_lock(self, pid: int) -> asyncio.Lock:
+        lock = self._per_pid_locks.get(pid)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._per_pid_locks[pid] = lock
+        return lock
 
     def set_thumb_enabled(self, enabled: bool) -> None:
         self._thumbs_enabled = enabled
@@ -172,17 +180,20 @@ class DownloadWorker:
             report.pages_done += 1
             return True, True
 
-        data = await self._downloader.fetch_bytes(url)
-        if data is None:
-            await self._mark_page_failed(pid, target, "fetch failed")
-            report.pages_failed += 1
-            return False, False
-        if not is_valid_image(data):
-            await self._mark_page_failed(pid, target, "invalid image data")
-            report.pages_failed += 1
-            return False, False
-
-        atomic_write_bytes(dest, data)
+        async with self._pid_lock(pid):
+            if dest.exists():
+                report.pages_done += 1
+                return True, True
+            data = await self._downloader.fetch_bytes(url)
+            if data is None:
+                await self._mark_page_failed(pid, target, "fetch failed")
+                report.pages_failed += 1
+                return False, False
+            if not is_valid_image(data):
+                await self._mark_page_failed(pid, target, "invalid image data")
+                report.pages_failed += 1
+                return False, False
+            atomic_write_bytes(dest, data)
         await self._mark_page_done(pid, target)
         report.pages_done += 1
         return True, False
@@ -206,32 +217,33 @@ class DownloadWorker:
         """Return a local original image, downloading missing pages on demand.
 
         Thumbnail jobs may run concurrently with (or before) image jobs, so the
-        source image may not be on disk yet. Downloading it here keeps job
-        ordering irrelevant at the cost of a duplicate write in the worst case.
+        source image may not be on disk yet. The per-pid lock keeps two writers
+        from racing on the same target path.
         """
-        existing = self._first_original(pid)
-        if existing is not None:
-            return existing
-        async with self._db.session() as session:
-            rows = (
-                await session.execute(
-                    select(IllustPage.original_url, IllustPage.page_index, IllustPage.ext)
-                    .where(IllustPage.pid == pid)
-                    .order_by(IllustPage.page_index)
-                    .limit(1)
-                )
-            ).first()
-        if rows is None:
-            return None
-        url, page_index, ext = rows
-        target = f"{page_index:03d}_p{page_index}{ext}"
-        data = await self._downloader.fetch_bytes(url)
-        if data is None or not is_valid_image(data):
-            return None
-        destination = self._storage.original_dir(pid) / target
-        atomic_write_bytes(destination, data)
-        await self._mark_page_done(pid, target)
-        return destination
+        async with self._pid_lock(pid):
+            existing = self._first_original(pid)
+            if existing is not None:
+                return existing
+            async with self._db.session() as session:
+                rows = (
+                    await session.execute(
+                        select(IllustPage.original_url, IllustPage.page_index, IllustPage.ext)
+                        .where(IllustPage.pid == pid)
+                        .order_by(IllustPage.page_index)
+                        .limit(1)
+                    )
+                ).first()
+            if rows is None:
+                return None
+            url, page_index, ext = rows
+            target = f"{page_index:03d}_p{page_index}{ext}"
+            data = await self._downloader.fetch_bytes(url)
+            if data is None or not is_valid_image(data):
+                return None
+            destination = self._storage.original_dir(pid) / target
+            atomic_write_bytes(destination, data)
+            await self._mark_page_done(pid, target)
+            return destination
 
     async def _handle_ugoira_zip(
         self, pid: int, target: str, report: DownloadReport
@@ -239,14 +251,26 @@ class DownloadWorker:
         dest = self._storage.work_dir(pid) / target
         if dest.exists():
             return True, True
-        async with self._db.session() as session:
-            meta = await session.get(UgoiraMeta, pid)
-        if meta is None or not meta.zip_url:
-            return False, False
-        ok = await self._downloader.fetch_to_file(meta.zip_url, dest)
+        ok = await self._ensure_ugoira_zip(pid)
         if ok:
             report.ugoira_done += 1
         return ok, False
+
+    async def _ensure_ugoira_zip(self, pid: int) -> bool:
+        """Download the ugoira zip if missing; serialized per pid.
+
+        Both the zip job and the transcode job may reach this concurrently;
+        the per-pid lock prevents two writers racing on ``source.zip.part``.
+        """
+        async with self._pid_lock(pid):
+            dest = self._storage.work_dir(pid) / "source.zip"
+            if dest.exists():
+                return True
+            async with self._db.session() as session:
+                meta = await session.get(UgoiraMeta, pid)
+            if meta is None or not meta.zip_url:
+                return False
+            return await self._downloader.fetch_to_file(meta.zip_url, dest)
 
     async def _handle_ugoira_mp4(
         self, pid: int, target: str, report: DownloadReport
@@ -254,13 +278,14 @@ class DownloadWorker:
         dest = self._storage.animation_path(pid)
         if dest.exists():
             return True, True
-        zip_path = self._storage.work_dir(pid) / "source.zip"
-        if not zip_path.exists():
-            return False, False
         async with self._db.session() as session:
             meta = await session.get(UgoiraMeta, pid)
         if meta is None:
             return False, False
+        # The zip job may run concurrently (or after) this one; fetch on demand.
+        if not await self._ensure_ugoira_zip(pid):
+            return False, False
+        zip_path = self._storage.work_dir(pid) / "source.zip"
         if self._transcode is not None:
             ok = await self._transcode(
                 zip_path=zip_path,
