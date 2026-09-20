@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -14,10 +15,8 @@ def atomic_write_bytes(path: Path, data: bytes) -> None:
         os.replace(tmp, path)
     finally:
         if tmp.exists():
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(tmp)
-            except OSError:
-                pass
 
 
 class WorksStorage:
