@@ -51,3 +51,39 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # Smoke test the amd64 image: startup, SPA shell, health endpoint and
+      # the bundled frontend assets, using a throwaway data volume.
+      - name: Smoke test image
+        run: |
+          set -euo pipefail
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          docker run -d --name smoke \
+            -p 18000:8000 \
+            -e PIXIV_REFRESH_TOKEN=dummy \
+            -e PIXIV_USER_ID=1 \
+            -e AUTH_TOKEN=smoke-token \
+            -e DATA_DIR=/tmp/data \
+            "$IMAGE"
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18000/api/health >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          echo "--- health ---"
+          curl -fsS http://127.0.0.1:18000/api/health
+          echo
+          echo "--- SPA shell ---"
+          curl -fsS http://127.0.0.1:18000/ | head -n 5
+          echo "--- login ---"
+          curl -fsS -c /tmp/cookies.txt -X POST http://127.0.0.1:18000/api/auth/login \
+            -H 'content-type: application/json' -d '{"token":"smoke-token"}'
+          echo
+          echo "--- gallery (empty library) ---"
+          curl -fsS -b /tmp/cookies.txt "http://127.0.0.1:18000/api/gallery?limit=1"
+          echo
+          echo "--- container logs ---"
+          docker logs smoke --tail 20
+
+      - name: Stop smoke container
+        if: always()
+        run: docker rm -f smoke || true
