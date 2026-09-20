@@ -42,6 +42,11 @@ class Illust(Base):
     meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
+    @property
+    def is_unavailable(self) -> bool:
+        """True when pixiv no longer serves this work (deleted or private)."""
+        return self.state == "deleted"
+
 
 class Bookmark(Base):
     __tablename__ = "bookmark"

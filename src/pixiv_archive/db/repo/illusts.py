@@ -1,7 +1,7 @@
 import os
 from urllib.parse import urlsplit
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,3 +132,38 @@ async def upsert_ugoira_meta(
 async def get_known_pids(session: AsyncSession) -> set[int]:
     rows = await session.execute(select(Illust.pid))
     return {row[0] for row in rows}
+
+
+async def get_illust_state(session: AsyncSession, pid: int) -> str | None:
+    return (
+        await session.execute(select(Illust.state).where(Illust.pid == pid))
+    ).scalar_one_or_none()
+
+
+async def create_placeholder_illust(session: AsyncSession, *, pid: int) -> None:
+    """Insert a bare illust row for a work that is already deleted on pixiv.
+
+    No title, tags, pages or meta_json: there is nothing real to store, and a
+    later sync can still restore it once the work is visible again.
+    """
+    author = insert(Author).values(id=0, name="", account="")
+    author = author.on_conflict_do_nothing(index_elements=[Author.id])
+    await session.execute(author)
+    stmt = insert(Illust).values(pid=pid, author_id=0, state="deleted")
+    stmt = stmt.on_conflict_do_nothing(index_elements=[Illust.pid])
+    await session.execute(stmt)
+
+
+async def mark_illust_deleted(session: AsyncSession, pid: int) -> bool:
+    """Flag a work as deleted without touching any of its other columns.
+
+    Returns True when a row was updated. A work that never existed is ignored;
+    its bookmark row is still written by the caller.
+    """
+    result = await session.execute(
+        update(Illust)
+        .where(Illust.pid == pid, Illust.state != "deleted")
+        .values(state="deleted", updated_at=utcnow())
+    )
+    assert isinstance(result, CursorResult)
+    return (result.rowcount or 0) > 0

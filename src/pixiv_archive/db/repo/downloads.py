@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import CursorResult, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pixiv_archive.db.models import DownloadBatch, DownloadJob
+from pixiv_archive.db.models import DownloadBatch, DownloadJob, utcnow
 
 
 async def create_batch(
@@ -173,3 +173,14 @@ async def jobs_for_pid(session: AsyncSession, pid: int) -> list[DownloadJob]:
         select(DownloadJob).where(DownloadJob.pid == pid).order_by(DownloadJob.id)
     )
     return list(rows.scalars().all())
+
+
+async def skip_jobs_for_pid(session: AsyncSession, pid: int) -> int:
+    """Skip queued/failed jobs for a work that no longer exists on pixiv."""
+    result = await session.execute(
+        update(DownloadJob)
+        .where(DownloadJob.pid == pid, DownloadJob.status.in_(("pending", "failed")))
+        .values(status="skipped", last_error="illust deleted", updated_at=utcnow())
+    )
+    assert isinstance(result, CursorResult)
+    return result.rowcount or 0
