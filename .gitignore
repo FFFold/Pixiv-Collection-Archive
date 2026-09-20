@@ -227,3 +227,7 @@ __marimo__/
 *.part
 
 
+
+# frontend build artifacts (generated into the backend package)
+src/pixiv_archive/web/static/assets/
+src/pixiv_archive/web/static/index.html

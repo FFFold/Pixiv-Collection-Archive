@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.test.ts","./src/api/client.ts","./src/api/types.ts","./src/lib/format.test.ts","./src/lib/format.ts","./vitest.setup.ts"],"version":"5.7.3"}

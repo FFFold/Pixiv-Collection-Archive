@@ -1,0 +1,33 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #0f1115;
+  --color-surface-raised: #161a20;
+  --color-surface-hover: #1d2531;
+  --color-border-subtle: #262b33;
+  --color-text-primary: #e6ebf2;
+  --color-text-muted: #9aa4b2;
+  --color-accent: #3b82f6;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Masonry via CSS columns: keeps DOM order (bookmark order) intact. */
+.masonry {
+  column-gap: 0.75rem;
+}
+.masonry > * {
+  break-inside: avoid;
+  margin-bottom: 0.75rem;
+}
