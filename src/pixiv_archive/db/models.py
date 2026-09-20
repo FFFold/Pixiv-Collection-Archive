@@ -64,4 +64,59 @@ class AppSetting(Base):
     value: Mapped[str] = mapped_column(Text, default="")
 
 
+class Tag(Base):
+    __tablename__ = "tag"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True)
+    translated_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class IllustTag(Base):
+    __tablename__ = "illust_tag"
+
+    pid: Mapped[int] = mapped_column(BigInteger, ForeignKey("illust.pid"), primary_key=True)
+    tag_id: Mapped[int] = mapped_column(ForeignKey("tag.id"), primary_key=True)
+    position: Mapped[int] = mapped_column(default=0)
+
+
+class IllustPage(Base):
+    __tablename__ = "illust_page"
+
+    pid: Mapped[int] = mapped_column(BigInteger, ForeignKey("illust.pid"), primary_key=True)
+    page_index: Mapped[int] = mapped_column(primary_key=True)
+    original_url: Mapped[str] = mapped_column(String(1024))
+    ext: Mapped[str] = mapped_column(String(16), default=".jpg")
+    download_state: Mapped[str] = mapped_column(String(16), default="pending")
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class UgoiraMeta(Base):
+    __tablename__ = "ugoira_meta"
+
+    pid: Mapped[int] = mapped_column(BigInteger, ForeignKey("illust.pid"), primary_key=True)
+    zip_url: Mapped[str] = mapped_column(String(1024), default="")
+    frames_json: Mapped[str] = mapped_column(Text, default="[]")
+    frame_count: Mapped[int] = mapped_column(default=0)
+
+
+class SyncRun(Base):
+    __tablename__ = "sync_run"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    started_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    pages_fetched: Mapped[int] = mapped_column(default=0)
+    new_count: Mapped[int] = mapped_column(default=0)
+    unbookmarked_count: Mapped[int] = mapped_column(default=0)
+    rank_rebuilt_count: Mapped[int] = mapped_column(default=0)
+    previews_fetched: Mapped[int] = mapped_column(default=0)
+    previews_failed: Mapped[int] = mapped_column(default=0)
+    failed_count: Mapped[int] = mapped_column(default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 Index("ix_bookmark_state_rank", Bookmark.state, Bookmark.rank)
