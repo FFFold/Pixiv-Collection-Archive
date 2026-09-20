@@ -164,7 +164,99 @@ class MetadataSyncService:
         return result
 
     async def run_full(self, *, max_pages: int | None = None) -> SyncResult:
-        raise NotImplementedError  # implemented in the next task
+        """Walk both bookmark lists completely, rebuilding ranks and states."""
+        self._cancel.clear()
+        started = utcnow()
+        async with self._db.session() as session:
+            run_id = await sync_runs.create_run(session, "full", now=started)
+            await session.commit()
+
+        result = SyncResult(run_id=run_id, kind="full")
+        try:
+            listed: list[tuple[PixivIllust, str, int]] = []
+            position = 0
+            truncated = False
+            for restrict in RESTRICTS:
+                cursor: int | None = None
+                while not self._cancel.is_set():
+                    page = await self._client.list_bookmarks(restrict, max_bookmark_id=cursor)
+                    result.pages_fetched += 1
+                    self._progress(
+                        "fetch",
+                        result.pages_fetched,
+                        position,
+                        f"读取{restrict}收藏第 {result.pages_fetched} 页",
+                    )
+                    if not page.illusts:
+                        break
+                    for illust in page.illusts:
+                        listed.append((illust, restrict, position))
+                        position += 1
+                    if page.next_bookmark_id is None:
+                        break
+                    cursor = page.next_bookmark_id
+                    if max_pages is not None and result.pages_fetched >= max_pages:
+                        truncated = True
+                        break
+                if truncated:
+                    break
+
+            async with self._db.session() as session:
+                known_pids = await illusts.get_known_pids(session)
+                old_ranks = await bookmarks.get_rank_map(session)
+
+            listed_pids = {illust.pid for illust, _, _ in listed}
+            missing = sorted(pid for pid in known_pids if pid not in listed_pids)
+
+            now = utcnow()
+            preview_targets: list[PixivIllust] = []
+            ugoira_targets: list[PixivIllust] = []
+
+            async with self._db.session() as session:
+                for illust, restrict, pos in listed:
+                    try:
+                        await illusts.upsert_illust(
+                            session, illust, meta_json=self._meta_json(illust)
+                        )
+                        new_rank = rank_mod.full_rank(pos)
+                        was_known = illust.pid in known_pids
+                        await bookmarks.set_active_rank(
+                            session,
+                            pid=illust.pid,
+                            restrict=restrict,
+                            rank=new_rank,
+                            now=now,
+                        )
+                        if was_known:
+                            if old_ranks.get(illust.pid) != new_rank:
+                                result.rank_rebuilt_count += 1
+                        else:
+                            result.new_count += 1
+                        preview_targets.append(illust)
+                        if illust.type == "ugoira":
+                            ugoira_targets.append(illust)
+                    except Exception as exc:  # noqa: BLE001 - keep the batch going
+                        result.failed_count += 1
+                        result.warnings.append(f"作品 {illust.pid} 元数据写入失败: {exc}")
+                if truncated:
+                    result.warnings.append(
+                        "达到 max_pages 限制，未完成全量遍历，未标记取消收藏"
+                    )
+                else:
+                    result.unbookmarked_count = await bookmarks.mark_unbookmarked(
+                        session, missing, now=now
+                    )
+                await session.commit()
+
+            await self._finalize(result, preview_targets, ugoira_targets)
+            result.status = "cancelled" if self._cancel.is_set() else "completed"
+        except Exception as exc:  # noqa: BLE001 - persist failure then re-raise
+            result.status = "failed"
+            result.error = str(exc)
+            await self._finish(result, started)
+            raise
+        await self._finish(result, started)
+        return result
 
     async def _finalize(
         self,
