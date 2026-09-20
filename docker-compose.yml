@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    image: ghcr.io/OWNER/pixiv-collection-archive:latest
+    container_name: pixiv-archive
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      DATA_DIR: /data
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data:/data
