@@ -92,6 +92,7 @@ class MetadataSyncService:
                 min_rank = await bookmarks.get_min_rank(session)
 
             discovered: list[tuple[PixivIllust, str]] = []
+            observed: list[tuple[PixivIllust, str]] = []
             seen: set[int] = set()
             for restrict in RESTRICTS:
                 cursor: int | None = None
@@ -106,6 +107,7 @@ class MetadataSyncService:
                     )
                     if not page.illusts:
                         break
+                    observed.extend((illust, restrict) for illust in page.illusts)
                     page_all_known = True
                     for illust in page.illusts:
                         if illust.pid in known_pids and states.get(illust.pid) != "unbookmarked":
@@ -131,9 +133,51 @@ class MetadataSyncService:
             now = utcnow()
             preview_targets: list[PixivIllust] = []
             ugoira_targets: list[PixivIllust] = []
+            pending_ranks: dict[int, int] = {
+                illust.pid: rank_value
+                for (illust, _), rank_value in zip(discovered, ranks, strict=True)
+            }
 
             async with self._db.session() as session:
+                existing_states = await illusts.get_illust_states(session)
+
+                for illust, restrict in observed:
+                    known = illust.pid in known_pids
+                    unavailable = is_unavailable(illust)
+                    if known and not unavailable:
+                        if existing_states.get(illust.pid) != "deleted":
+                            continue
+                        await illusts.upsert_illust(
+                            session, illust, meta_json=self._meta_json(illust)
+                        )
+                        rank_value = await bookmarks.get_rank(session, illust.pid)
+                        await bookmarks.set_active_rank(
+                            session,
+                            pid=illust.pid,
+                            restrict=restrict,
+                            rank=rank_value if rank_value is not None else 0,
+                            now=now,
+                        )
+                        preview_targets.append(illust)
+                        if illust.type == "ugoira":
+                            ugoira_targets.append(illust)
+                        continue
+                    if not unavailable:
+                        continue
+                    rank_value = pending_ranks.get(illust.pid)
+                    if rank_value is None:
+                        current = await bookmarks.get_rank(session, illust.pid)
+                        if current is None:
+                            continue
+                        rank_value = current
+                    if await self._handle_unavailable(
+                        session, illust, restrict=restrict, rank=rank_value
+                    ):
+                        result.deleted_count += 1
+
                 for (illust, restrict), rank_value in zip(discovered, ranks, strict=True):
+                    if is_unavailable(illust):
+                        continue
                     try:
                         await illusts.upsert_illust(
                             session, illust, meta_json=self._meta_json(illust)

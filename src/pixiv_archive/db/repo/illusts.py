@@ -134,6 +134,11 @@ async def get_known_pids(session: AsyncSession) -> set[int]:
     return {row[0] for row in rows}
 
 
+async def get_illust_states(session: AsyncSession) -> dict[int, str]:
+    rows = await session.execute(select(Illust.pid, Illust.state))
+    return {pid: state for pid, state in rows}
+
+
 async def get_illust_state(session: AsyncSession, pid: int) -> str | None:
     return (
         await session.execute(select(Illust.state).where(Illust.pid == pid))

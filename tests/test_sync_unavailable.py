@@ -4,7 +4,7 @@ from sqlalchemy import select
 from fakes import FakeClient, FakeDownloader, make_illust, make_stub_illust, page
 from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import DownloadJob, Illust, IllustPage
-from pixiv_archive.db.repo import downloads, illusts
+from pixiv_archive.db.repo import bookmarks, downloads, illusts
 from pixiv_archive.media.storage import WorksStorage
 from pixiv_archive.sync.orchestrator import MetadataSyncService
 from pixiv_archive.sync.unavailable import is_unavailable
@@ -150,3 +150,73 @@ async def original_url_for(db, pid: int) -> str:
             await session.execute(select(IllustPage).where(IllustPage.pid == pid))
         ).scalar_one()
     return row.original_url
+
+
+async def test_incremental_marks_known_work_deleted_when_first_page_shows_stub(db, tmp_path):
+    setup = FakeClient(
+        {"public": [page([make_illust(1, title="original")], cursor=None)], "private": []}
+    )
+    await build_service(db, tmp_path, setup, FakeDownloader()).run_full()
+
+    shrunk = FakeClient({"public": [page([make_stub_illust(1)], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, shrunk, FakeDownloader()).run_incremental()
+
+    assert result.deleted_count == 1
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert row.state == "deleted"
+    assert row.title == "original"
+
+
+async def test_incremental_restores_stub_that_came_back(db, tmp_path):
+    stub = FakeClient({"public": [page([make_stub_illust(1)], cursor=None)], "private": []})
+    await build_service(db, tmp_path, stub, FakeDownloader()).run_full()
+    async with db.session() as session:
+        assert (await session.get(Illust, 1)).state == "deleted"
+
+    alive = FakeClient({"public": [page([make_illust(1, title="back")], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, alive, FakeDownloader()).run_incremental()
+
+    assert result.deleted_count == 0
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert row.state == "active"
+    assert row.title == "back"
+
+
+async def test_incremental_marks_new_stub_as_deleted(db, tmp_path):
+    client = FakeClient({"public": [page([make_stub_illust(9)], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+
+    assert result.deleted_count == 1
+    assert result.new_count == 0
+    async with db.session() as session:
+        row = await session.get(Illust, 9)
+    assert row.state == "deleted"
+    assert row.page_count == 0
+
+
+async def test_incremental_does_not_move_rank_of_known_deleted_work(db, tmp_path):
+    setup = FakeClient(
+        {
+            "public": [
+                page([make_illust(1), make_illust(2), make_illust(3)], cursor=None)
+            ],
+            "private": [],
+        }
+    )
+    await build_service(db, tmp_path, setup, FakeDownloader()).run_full()
+    async with db.session() as session:
+        before = await bookmarks.get_rank_map(session)
+
+    shrunk = FakeClient(
+        {
+            "public": [page([make_stub_illust(2), make_illust(3)], cursor=None)],
+            "private": [],
+        }
+    )
+    await build_service(db, tmp_path, shrunk, FakeDownloader()).run_incremental()
+    async with db.session() as session:
+        after = await bookmarks.get_rank_map(session)
+    assert after[2] == before[2]
+    assert after[3] == before[3]

@@ -21,6 +21,12 @@ async def get_min_rank(session: AsyncSession) -> int | None:
     return (await session.execute(select(Bookmark.rank).order_by(Bookmark.rank).limit(1))).scalar()
 
 
+async def get_rank(session: AsyncSession, pid: int) -> int | None:
+    return (
+        await session.execute(select(Bookmark.rank).where(Bookmark.pid == pid))
+    ).scalar_one_or_none()
+
+
 async def set_active_rank(
     session: AsyncSession, *, pid: int, restrict: str, rank: int, now: datetime
 ) -> bool:
