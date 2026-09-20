@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 from collections import deque
 from collections.abc import AsyncIterator
@@ -34,10 +35,8 @@ class EventBus:
         event = {"type": event_type, "payload": payload}
         self._history.append(event)
         for queue in list(self._subscribers):
-            try:
+            with contextlib.suppress(asyncio.QueueFull):
                 queue.put_nowait(event)
-            except asyncio.QueueFull:
-                pass
 
     def recent(self, limit: int | None = None) -> list[dict[str, Any]]:
         events = list(self._history)
