@@ -119,4 +119,40 @@ class SyncRun(Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class DownloadBatch(Base):
+    __tablename__ = "download_batch"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    scope: Mapped[str] = mapped_column(String(32))
+    filter_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="running")
+    cancelled: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    total: Mapped[int] = mapped_column(default=0)
+    finished: Mapped[int] = mapped_column(default=0)
+    failed: Mapped[int] = mapped_column(default=0)
+
+
+class DownloadJob(Base):
+    __tablename__ = "download_job"
+    __table_args__ = (UniqueConstraint("pid", "kind", "target", name="uq_download_job"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    batch_id: Mapped[int | None] = mapped_column(
+        ForeignKey("download_batch.id"), nullable=True, index=True
+    )
+    pid: Mapped[int] = mapped_column(BigInteger, ForeignKey("illust.pid"), index=True)
+    kind: Mapped[str] = mapped_column(String(16))
+    target: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
+Index("ix_download_job_status_batch", DownloadJob.status, DownloadJob.batch_id)
+
+
 Index("ix_bookmark_state_rank", Bookmark.state, Bookmark.rank)
