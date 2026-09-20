@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import zipfile
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ def ffmpeg_available(ffmpeg_bin: str) -> bool:
     return shutil.which(ffmpeg_bin) is not None
 
 
-def validate_frames(zip_path: Path, frames: list[dict], extract_dir: Path) -> list[str]:
+def validate_frames(zip_path: Path, frames: list[dict[str, Any]], extract_dir: Path) -> list[str]:
     """Extract the zip and confirm every frame in ``frames`` exists.
 
     Returns the ordered list of member names. Raises UgoiraError on any
@@ -39,7 +40,7 @@ def validate_frames(zip_path: Path, frames: list[dict], extract_dir: Path) -> li
     return [frame["file"] for frame in frames]
 
 
-def build_concat_file(frames: list[dict], dest_dir: Path, name: str = "frames.txt") -> Path:
+def build_concat_file(frames: list[dict[str, Any]], dest_dir: Path, name: str = "frames.txt") -> Path:
     """Write an ffmpeg concat script with per-frame durations.
 
     The final frame is listed twice because ffmpeg ignores the duration of
@@ -134,3 +135,4 @@ def transcode_to_mp4(
         return False
     tmp_dest.replace(dest)
     return True
+
