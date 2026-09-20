@@ -1,27 +1,32 @@
 from collections.abc import AsyncIterator
-from typing import Any
 
 from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pixiv_archive.config import Settings
 from pixiv_archive.db.engine import Database
+from pixiv_archive.web.sse import EventBus
+from pixiv_archive.web.tasks import TaskManager
 
 
 def get_settings(request: Request) -> Settings:
-    return request.app.state.settings  # type: ignore[no-any-return]
+    settings: Settings = request.app.state.settings
+    return settings
 
 
 def get_database(request: Request) -> Database:
-    return request.app.state.db  # type: ignore[no-any-return]
+    database: Database = request.app.state.db
+    return database
 
 
-def get_tasks(request: Request) -> Any:
-    return request.app.state.tasks
+def get_tasks(request: Request) -> TaskManager:
+    tasks: TaskManager = request.app.state.tasks
+    return tasks
 
 
-def get_events(request: Request) -> Any:
-    return request.app.state.events
+def get_events(request: Request) -> EventBus:
+    events: EventBus = request.app.state.events
+    return events
 
 
 async def get_session(request: Request) -> AsyncIterator[AsyncSession]:
