@@ -1,9 +1,6 @@
-import uvicorn
+import sys
 
-
-def main() -> None:
-    uvicorn.run("pixiv_archive.web.app:create_app", factory=True, host="0.0.0.0", port=8000)
-
+from pixiv_archive.cli import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
