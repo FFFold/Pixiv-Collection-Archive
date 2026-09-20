@@ -18,9 +18,7 @@ async def get_rank_map(session: AsyncSession) -> dict[int, int]:
 
 
 async def get_min_rank(session: AsyncSession) -> int | None:
-    return (
-        await session.execute(select(Bookmark.rank).order_by(Bookmark.rank).limit(1))
-    ).scalar()
+    return (await session.execute(select(Bookmark.rank).order_by(Bookmark.rank).limit(1))).scalar()
 
 
 async def set_active_rank(
@@ -76,8 +74,7 @@ async def mark_unbookmarked(session: AsyncSession, pids: list[int], *, now: date
 async def ordered_pids(session: AsyncSession) -> list[int]:
     """All bookmarked pids ordered by rank; unbookmarked rows sort last."""
     rows = await session.execute(
-        select(Bookmark.pid)
-        .order_by(
+        select(Bookmark.pid).order_by(
             (Bookmark.state != "active"),
             Bookmark.rank,
         )

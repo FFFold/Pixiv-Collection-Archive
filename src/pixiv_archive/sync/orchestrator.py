@@ -104,10 +104,7 @@ class MetadataSyncService:
                         break
                     page_all_known = True
                     for illust in page.illusts:
-                        if (
-                            illust.pid in known_pids
-                            and states.get(illust.pid) != "unbookmarked"
-                        ):
+                        if illust.pid in known_pids and states.get(illust.pid) != "unbookmarked":
                             continue
                         page_all_known = False
                         if illust.pid not in seen:
@@ -239,9 +236,7 @@ class MetadataSyncService:
                         result.failed_count += 1
                         result.warnings.append(f"作品 {illust.pid} 元数据写入失败: {exc}")
                 if truncated:
-                    result.warnings.append(
-                        "达到 max_pages 限制，未完成全量遍历，未标记取消收藏"
-                    )
+                    result.warnings.append("达到 max_pages 限制，未完成全量遍历，未标记取消收藏")
                 else:
                     result.unbookmarked_count = await bookmarks.mark_unbookmarked(
                         session, missing, now=now

@@ -117,9 +117,7 @@ async def test_downloader_mirror_falls_back_to_official(tmp_path):
             return httpx.Response(403)
         return httpx.Response(200, content=b"official")
 
-    downloader = ImageDownloader(
-        _image_client(handler), mirror="mirror.example.com", concurrency=1
-    )
+    downloader = ImageDownloader(_image_client(handler), mirror="mirror.example.com", concurrency=1)
     dest = tmp_path / "m.jpg"
     assert await downloader.fetch_to_file("https://i.pximg.net/m.jpg", dest) is True
     assert hosts == ["mirror.example.com", "i.pximg.net"]
@@ -133,9 +131,7 @@ async def test_downloader_prefers_mirror_when_it_works(tmp_path):
         hosts.append(request.url.host)
         return httpx.Response(200, content=b"mirrored")
 
-    downloader = ImageDownloader(
-        _image_client(handler), mirror="mirror.example.com", concurrency=1
-    )
+    downloader = ImageDownloader(_image_client(handler), mirror="mirror.example.com", concurrency=1)
     dest = tmp_path / "n.jpg"
     assert await downloader.fetch_to_file("https://i.pximg.net/n.jpg", dest) is True
     assert hosts == ["mirror.example.com"]

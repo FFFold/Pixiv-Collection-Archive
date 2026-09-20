@@ -75,9 +75,7 @@ async def test_full_sync_refreshes_metadata(db, tmp_path):
 
     refreshed = FakeClient(
         {
-            "public": [
-                page([make_illust(1, title="new title", total_bookmarks=999)], cursor=None)
-            ],
+            "public": [page([make_illust(1, title="new title", total_bookmarks=999)], cursor=None)],
             "private": [],
         }
     )
@@ -150,9 +148,7 @@ async def test_full_sync_does_not_refetch_existing_previews(db, tmp_path):
 async def test_full_sync_truncated_does_not_mark_unbookmarked(db, tmp_path):
     setup = FakeClient(
         {
-            "public": [
-                page([make_illust(1), make_illust(2), make_illust(3)], cursor=None)
-            ],
+            "public": [page([make_illust(1), make_illust(2), make_illust(3)], cursor=None)],
             "private": [],
         }
     )

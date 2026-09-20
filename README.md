@@ -10,8 +10,8 @@
 
 ## 状态
 
-- [x] 项目基础 + pixiv API 层（当前进度）
-- [ ] 阶段 A：元数据同步
+- [x] 项目基础 + pixiv API 层
+- [x] 阶段 A：元数据同步（增量 / 全量 + rank 顺序 + 预览图）
 - [ ] 阶段 B：图片下载
 - [ ] Web API 与前端
 - [ ] 发布
@@ -24,10 +24,35 @@ cp .env.example .env   # 填写 PIXIV_REFRESH_TOKEN / PIXIV_USER_ID
 uv run pytest
 ```
 
+### 阶段 A：同步收藏元数据
+
+```bash
+# 增量（默认；稳定态只请求前 1-2 页）
+uv run python -m pixiv_archive sync --mode incremental
+
+# 全量（首次同步、或需要重建顺序 / 检出取消收藏时）
+uv run python -m pixiv_archive sync --mode full
+
+# 调试：只翻 N 页、跳过预览图
+uv run python -m pixiv_archive sync --max-pages 2 --no-previews
+```
+
+数据落盘结构：
+
+```
+$DATA_DIR/works/{pid}/
+    meta.json     # 作品元数据快照（pixiv 原始字段，可离线重建 DB）
+    preview.jpg   # 收藏列表预览图（约 16KB）
+```
+
+收藏顺序由数据库 `bookmark.rank` 承载（稀疏分配，越小越新），可通过 `alembic upgrade head` 之外的独立迁移演进。
+
 真实 API 集成测试（需要代理与凭据）：
 
 ```bash
-uv run pytest tests/test_integration_live.py -m integration -v -s
+# PowerShell
+$env:PIXIV_PROXY="http://127.0.0.1:7897"
+uv run pytest tests/test_integration_live.py tests/test_integration_sync.py -m integration -v -s
 ```
 
 ## Docker

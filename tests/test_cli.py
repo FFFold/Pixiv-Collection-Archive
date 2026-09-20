@@ -44,12 +44,11 @@ def _settings(monkeypatch, tmp_path) -> Settings:
 
 async def test_open_sync_service_reopens_cleanly(monkeypatch, tmp_path):
     settings = _settings(monkeypatch, tmp_path)
-    db = Database(settings.db_path)
-    await db.create_all()
-    await db.dispose()
 
     async with open_sync_service(settings) as service:
         assert service is not None
+    assert settings.db_path.exists()
+
     async with open_sync_service(settings) as service:
         assert service is not None
 
@@ -94,9 +93,7 @@ async def test_run_sync_incremental_with_fakes(monkeypatch, tmp_path):
 
     db = Database(settings.db_path)
     async with db.session() as session:
-        pids = (
-            (await session.execute(select(Illust.pid).order_by(Illust.pid))).scalars().all()
-        )
+        pids = (await session.execute(select(Illust.pid).order_by(Illust.pid))).scalars().all()
         run = (await session.execute(select(sync_runs.SyncRun))).scalar_one()
     await db.dispose()
     assert pids == [1, 2]
