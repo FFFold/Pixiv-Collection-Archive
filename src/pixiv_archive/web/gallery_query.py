@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-
 from typing import Any
+
 from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -130,5 +130,3 @@ async def query_gallery(
         for illust, bookmark, author, display_index in rows
     ]
     return GalleryResponse(items=items, total=total, offset=offset, limit=limit)
-
-
