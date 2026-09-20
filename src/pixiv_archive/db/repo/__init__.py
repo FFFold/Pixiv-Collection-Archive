@@ -1,3 +1,3 @@
-from pixiv_archive.db.repo import illusts
+from pixiv_archive.db.repo import bookmarks, illusts, sync_runs
 
-__all__ = ["illusts"]
+__all__ = ["bookmarks", "illusts", "sync_runs"]
