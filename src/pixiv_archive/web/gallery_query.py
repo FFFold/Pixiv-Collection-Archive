@@ -20,6 +20,8 @@ class GalleryFilters:
     sort: str = "rank"
     include_unbookmarked: bool = False
     only_unbookmarked: bool = False
+    only_deleted: bool = False
+    include_deleted: bool = False
     author_id: int | None = None
     tag: str | None = None
     q: str | None = None
@@ -32,7 +34,12 @@ class GalleryFilters:
 
 
 def _base_conditions(filters: GalleryFilters) -> list[Any]:
-    conditions = [Illust.state == "active"]
+    if filters.only_deleted:
+        conditions: list[Any] = [Illust.state == "deleted"]
+    elif filters.include_deleted:
+        conditions = []
+    else:
+        conditions = [Illust.state == "active"]
     if filters.only_unbookmarked:
         conditions.append(Bookmark.state == "unbookmarked")
     elif not filters.include_unbookmarked:
@@ -126,6 +133,7 @@ async def query_gallery(
             thumb_url=f"/api/illust/{illust.pid}/thumb",
             restrict=bookmark.restrict,
             unbookmarked=bookmark.state == "unbookmarked",
+            state=illust.state,
         )
         for illust, bookmark, author, display_index in rows
     ]

@@ -34,7 +34,6 @@ async def _selected_pids(session: AsyncSession, payload: ExportRequest) -> list[
     stmt = (
         select(Illust.pid)
         .join(Bookmark, Bookmark.pid == Illust.pid)
-        .where(Illust.state == "active")
         .order_by(Bookmark.rank)
     )
     if payload.pids:

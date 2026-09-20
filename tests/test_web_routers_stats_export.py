@@ -140,6 +140,32 @@ async def test_export_rejects_empty_selection(client):
     assert response.status_code == 422
 
 
+async def test_export_includes_deleted_works(client):
+    import io
+    import zipfile
+
+    from pixiv_archive.db.models import Illust
+
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        session.add(Illust(pid=30, title="gone", author_id=1, state="deleted"))
+        await session.commit()
+    async with database.session() as session:
+        session.add(Bookmark(pid=30, restrict="public", rank=2048, state="active"))
+        await session.commit()
+
+    response = await client.post(
+        "/api/export",
+        json={"include_metadata": True, "include_originals": False, "pids": [30]},
+    )
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    await client._transport.app.state.tasks.wait(task_id)  # type: ignore[union-attr]
+    download = await client.get(f"/api/export/{task_id}/download")
+    archive = zipfile.ZipFile(io.BytesIO(download.content))
+    assert "metadata/30.json" in archive.namelist()
+
+
 async def test_export_download_404_for_unknown(client):
     response = await client.get("/api/export/nope/download")
     assert response.status_code == 404

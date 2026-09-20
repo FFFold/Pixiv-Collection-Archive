@@ -161,3 +161,31 @@ async def test_query_rank_range(db):
             session, GalleryFilters(rank_start=1, rank_count=1), offset=0, limit=10
         )
     assert [item.pid for item in result.items] == [20]
+
+
+async def test_query_only_deleted_returns_stubs(db):
+    await _seed(db, 1, rank=0)
+    await _seed(db, 2, rank=10, state="deleted")
+    async with db.session() as session:
+        result = await query_gallery(
+            session, GalleryFilters(only_deleted=True), offset=0, limit=10
+        )
+    assert [item.pid for item in result.items] == [2]
+    assert result.items[0].state == "deleted"
+
+
+async def test_query_include_deleted_returns_everything(db):
+    await _seed(db, 1, rank=0)
+    await _seed(db, 2, rank=10, state="deleted")
+    async with db.session() as session:
+        result = await query_gallery(
+            session, GalleryFilters(include_deleted=True), offset=0, limit=10
+        )
+    assert [item.pid for item in result.items] == [1, 2]
+
+
+async def test_query_item_exposes_active_state(db):
+    await _seed(db, 1, rank=0)
+    async with db.session() as session:
+        result = await query_gallery(session, GalleryFilters(), offset=0, limit=10)
+    assert result.items[0].state == "active"

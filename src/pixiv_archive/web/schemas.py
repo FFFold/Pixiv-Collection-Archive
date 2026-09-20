@@ -31,6 +31,7 @@ class GalleryItem(BaseModel):
     thumb_url: str
     restrict: str
     unbookmarked: bool
+    state: str
 
 
 class GalleryResponse(BaseModel):

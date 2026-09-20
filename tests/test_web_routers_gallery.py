@@ -98,6 +98,30 @@ async def test_gallery_sort_and_rank_range(client):
     assert [item["pid"] for item in ranged.json()["items"]] == [20]
 
 
+async def test_gallery_status_filter(client):
+    _login(client)
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        session.add(
+            Illust(pid=30, title="已失效", author_id=1, page_count=0, state="deleted")
+        )
+        await session.commit()
+    async with database.session() as session:
+        session.add(Bookmark(pid=30, restrict="public", rank=2048, state="active"))
+        await session.commit()
+
+    default = await client.get("/api/gallery")
+    assert [item["pid"] for item in default.json()["items"]] == [10, 20]
+
+    only = await client.get("/api/gallery", params={"only_deleted": True})
+    payload = only.json()
+    assert [item["pid"] for item in payload["items"]] == [30]
+    assert payload["items"][0]["state"] == "deleted"
+
+    everything = await client.get("/api/gallery", params={"include_deleted": True})
+    assert [item["pid"] for item in everything.json()["items"]] == [10, 20, 30]
+
+
 async def test_authors_endpoint(client):
     _login(client)
     response = await client.get("/api/authors")

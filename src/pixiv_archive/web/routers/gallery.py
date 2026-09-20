@@ -28,6 +28,8 @@ async def gallery(
     restrict: str | None = Query(default=None, pattern="^(public|private)$"),
     only_unbookmarked: bool = False,
     include_unbookmarked: bool = False,
+    only_deleted: bool = False,
+    include_deleted: bool = False,
     rank_start: int | None = Query(default=None, ge=0),
     rank_count: int | None = Query(default=None, ge=1),
 ) -> GalleryResponse:
@@ -42,6 +44,8 @@ async def gallery(
         restrict=restrict,
         only_unbookmarked=only_unbookmarked,
         include_unbookmarked=include_unbookmarked,
+        only_deleted=only_deleted,
+        include_deleted=include_deleted,
         rank_start=rank_start,
         rank_count=rank_count,
     )
