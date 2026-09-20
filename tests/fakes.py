@@ -1,7 +1,21 @@
 """Shared test doubles for sync tests."""
 
+import io
+
+from PIL import Image
+
 from pixiv_archive.pixiv.models import BookmarkPage, UgoiraFrame, UgoiraMetadata
 from pixiv_archive.pixiv.models import Illust as PixivIllust
+
+
+def _jpeg_bytes(size: tuple[int, int] = (64, 48)) -> bytes:
+    image = Image.new("RGB", size, color=(90, 120, 150))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+_FAKE_IMAGE = _jpeg_bytes()
 
 
 def make_illust(pid: int, *, type_: str = "illust", **overrides) -> PixivIllust:
@@ -56,7 +70,11 @@ class FakeClient:
 
 
 class FakeDownloader:
-    """Writes fake preview bytes; records requested urls."""
+    """Writes fake image bytes; records requested urls.
+
+    ``fetch_bytes`` returns a real (tiny) JPEG so image validation passes;
+    ``fetch_to_file`` writes a real JPEG to the destination as well.
+    """
 
     def __init__(self, fail_urls: set[str] | None = None) -> None:
         self.urls: list[str] = []
@@ -67,11 +85,11 @@ class FakeDownloader:
         if url in self.fail_urls:
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(b"preview")
+        dest.write_bytes(_FAKE_IMAGE)
         return True
 
     async def fetch_bytes(self, url: str) -> bytes | None:
         self.urls.append(url)
         if url in self.fail_urls:
             return None
-        return b"preview"
+        return _FAKE_IMAGE
