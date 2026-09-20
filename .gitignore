@@ -221,3 +221,9 @@ __marimo__/
 # Superpowers brainstorm sessions
 .superpowers/
 
+# project
+/data/
+.env
+*.part
+
+
