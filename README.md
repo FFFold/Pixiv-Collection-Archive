@@ -12,7 +12,7 @@
 
 - [x] 项目基础 + pixiv API 层
 - [x] 阶段 A：元数据同步（增量 / 全量 + rank 顺序 + 预览图）
-- [ ] 阶段 B：图片下载
+- [x] 阶段 B：图片下载（持久化队列 + 范围批次 + 原图 / ugoira / 缩略图）
 - [ ] Web API 与前端
 - [ ] 发布
 
@@ -52,8 +52,39 @@ $DATA_DIR/works/{pid}/
 ```bash
 # PowerShell
 $env:PIXIV_PROXY="http://127.0.0.1:7897"
-uv run pytest tests/test_integration_live.py tests/test_integration_sync.py -m integration -v -s
+uv run pytest tests/test_integration_live.py tests/test_integration_sync.py tests/test_integration_download.py -m integration -v -s
 ```
+
+### 阶段 B：下载图片
+
+```bash
+# 下载全部尚未下载的作品（分批、可中断续传）
+uv run python -m pixiv_archive download
+
+# 只下载 rank 区间（前 20 个收藏）
+uv run python -m pixiv_archive download --scope rank-range --start 0 --limit 20
+
+# 指定作者 / 指定作品 / 只看 R-18
+uv run python -m pixiv_archive download --scope author --author 12345
+uv run python -m pixiv_archive download --scope selected --pids 111,222,333
+uv run python -m pixiv_archive download --scope filter --x-restrict 1
+
+# 重试此前失败的项；跳过缩略图
+uv run python -m pixiv_archive download --retry-failed
+uv run python -m pixiv_archive download --no-thumbs
+```
+
+下载落盘：
+
+```
+$DATA_DIR/works/{pid}/
+    original/000_p0.jpg   # 原图（页序号前缀保证页序）
+    source.zip            # ugoira 原始帧
+    animation.mp4         # ugoira 转码（需 ffmpeg；缺失时保留 zip 并标记 skipped）
+    thumb.webp            # 本地 400px 缩略图
+```
+
+所有下载均使用阶段 A 已落库的原图 URL，**不调用 pixiv API**。下载作业持久化在 `download_job` 表中，中断后重跑会自动续传（含服务崩溃遗留的 `running` 作业）。
 
 ## Docker
 
