@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,6 +69,7 @@ async def mark_unbookmarked(session: AsyncSession, pids: list[int], *, now: date
         .where(Bookmark.pid.in_(pids), Bookmark.state == "active")
         .values(state="unbookmarked", unbookmarked_at=now)
     )
+    assert isinstance(result, CursorResult)
     return result.rowcount or 0
 
 
