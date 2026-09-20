@@ -40,7 +40,9 @@ def validate_frames(zip_path: Path, frames: list[dict[str, Any]], extract_dir: P
     return [frame["file"] for frame in frames]
 
 
-def build_concat_file(frames: list[dict[str, Any]], dest_dir: Path, name: str = "frames.txt") -> Path:
+def build_concat_file(
+    frames: list[dict[str, Any]], dest_dir: Path, name: str = "frames.txt"
+) -> Path:
     """Write an ffmpeg concat script with per-frame durations.
 
     The final frame is listed twice because ffmpeg ignores the duration of
@@ -135,4 +137,3 @@ def transcode_to_mp4(
         return False
     tmp_dest.replace(dest)
     return True
-

@@ -44,9 +44,7 @@ async def enqueue_jobs(
         ).scalar_one_or_none()
         if existing is None:
             session.add(
-                DownloadJob(
-                    batch_id=batch_id, pid=pid, kind=kind, target=target, created_at=now
-                )
+                DownloadJob(batch_id=batch_id, pid=pid, kind=kind, target=target, created_at=now)
             )
             added += 1
         elif existing.status in ("done", "failed", "skipped"):
