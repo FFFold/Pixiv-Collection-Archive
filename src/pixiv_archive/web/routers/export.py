@@ -31,11 +31,7 @@ def _export_dir(settings: Any) -> Path:
 
 
 async def _selected_pids(session: AsyncSession, payload: ExportRequest) -> list[int]:
-    stmt = (
-        select(Illust.pid)
-        .join(Bookmark, Bookmark.pid == Illust.pid)
-        .order_by(Bookmark.rank)
-    )
+    stmt = select(Illust.pid).join(Bookmark, Bookmark.pid == Illust.pid).order_by(Bookmark.rank)
     if payload.pids:
         stmt = stmt.where(Illust.pid.in_(payload.pids))
     if payload.x_restrict is not None:

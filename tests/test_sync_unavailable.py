@@ -36,11 +36,7 @@ def test_placeholder_in_meta_pages_is_detected():
     illust = make_illust(
         790,
         meta_pages=[
-            {
-                "image_urls": {
-                    "original": "https://s.pximg.net/common/images/limit_mypixiv_360.png"
-                }
-            }
+            {"image_urls": {"original": "https://s.pximg.net/common/images/limit_mypixiv_360.png"}}
         ],
     )
     assert is_unavailable(illust) is True
@@ -133,7 +129,9 @@ async def test_full_sync_restores_work_that_came_back(db, tmp_path):
     result = await build_service(db, tmp_path, stub, FakeDownloader()).run_full()
     assert result.deleted_count == 1
 
-    alive = FakeClient({"public": [page([make_illust(1, title="back")], cursor=None)], "private": []})
+    alive = FakeClient(
+        {"public": [page([make_illust(1, title="back")], cursor=None)], "private": []}
+    )
     result = await build_service(db, tmp_path, alive, FakeDownloader()).run_full()
 
     assert result.deleted_count == 0
@@ -146,9 +144,7 @@ async def test_full_sync_restores_work_that_came_back(db, tmp_path):
 
 async def original_url_for(db, pid: int) -> str:
     async with db.session() as session:
-        row = (
-            await session.execute(select(IllustPage).where(IllustPage.pid == pid))
-        ).scalar_one()
+        row = (await session.execute(select(IllustPage).where(IllustPage.pid == pid))).scalar_one()
     return row.original_url
 
 
@@ -174,7 +170,9 @@ async def test_incremental_restores_stub_that_came_back(db, tmp_path):
     async with db.session() as session:
         assert (await session.get(Illust, 1)).state == "deleted"
 
-    alive = FakeClient({"public": [page([make_illust(1, title="back")], cursor=None)], "private": []})
+    alive = FakeClient(
+        {"public": [page([make_illust(1, title="back")], cursor=None)], "private": []}
+    )
     result = await build_service(db, tmp_path, alive, FakeDownloader()).run_incremental()
 
     assert result.deleted_count == 0
@@ -216,9 +214,7 @@ def test_cli_report_mentions_deleted_count(capsys):
 async def test_incremental_does_not_move_rank_of_known_deleted_work(db, tmp_path):
     setup = FakeClient(
         {
-            "public": [
-                page([make_illust(1), make_illust(2), make_illust(3)], cursor=None)
-            ],
+            "public": [page([make_illust(1), make_illust(2), make_illust(3)], cursor=None)],
             "private": [],
         }
     )

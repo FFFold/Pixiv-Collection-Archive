@@ -167,9 +167,7 @@ async def test_query_only_deleted_returns_stubs(db):
     await _seed(db, 1, rank=0)
     await _seed(db, 2, rank=10, state="deleted")
     async with db.session() as session:
-        result = await query_gallery(
-            session, GalleryFilters(only_deleted=True), offset=0, limit=10
-        )
+        result = await query_gallery(session, GalleryFilters(only_deleted=True), offset=0, limit=10)
     assert [item.pid for item in result.items] == [2]
     assert result.items[0].state == "deleted"
 

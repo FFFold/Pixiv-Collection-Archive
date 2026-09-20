@@ -102,9 +102,7 @@ async def test_gallery_status_filter(client):
     _login(client)
     database = client._transport.app.state.db  # type: ignore[union-attr]
     async with database.session() as session:
-        session.add(
-            Illust(pid=30, title="已失效", author_id=1, page_count=0, state="deleted")
-        )
+        session.add(Illust(pid=30, title="已失效", author_id=1, page_count=0, state="deleted"))
         await session.commit()
     async with database.session() as session:
         session.add(Bookmark(pid=30, restrict="public", rank=2048, state="active"))
