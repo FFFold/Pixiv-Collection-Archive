@@ -33,6 +33,33 @@ def make_illust(pid: int, *, type_: str = "illust", **overrides) -> PixivIllust:
     return PixivIllust.model_validate(payload)
 
 
+_STUB_URL = "https://s.pximg.net/common/images/limit_unknown_360.png"
+
+
+def make_stub_illust(pid: int, **overrides) -> PixivIllust:
+    """A bookmark entry for a deleted/private work, as pixiv returns it."""
+    payload = {
+        "id": pid,
+        "title": "",
+        "type": "illust",
+        "page_count": 1,
+        "user": {"id": 0, "name": "", "account": ""},
+        "tags": [],
+        "width": 100,
+        "height": 100,
+        "total_view": 0,
+        "total_bookmarks": 0,
+        "meta_single_page": {"original_image_url": _STUB_URL},
+        "image_urls": {
+            "square_medium": _STUB_URL,
+            "medium": _STUB_URL,
+            "large": _STUB_URL,
+        },
+    }
+    payload.update(overrides)
+    return PixivIllust.model_validate(payload)
+
+
 def page(illusts: list[PixivIllust], cursor: int | None) -> BookmarkPage:
     next_url = (
         f"https://app-api.pixiv.net/v1/user/bookmarks/illust?user_id=1&max_bookmark_id={cursor}"
