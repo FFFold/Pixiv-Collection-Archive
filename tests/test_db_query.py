@@ -31,6 +31,7 @@ async def _seed(
     bookmarks: int = 0,
     views: int = 0,
     tags: tuple[str, ...] = (),
+    create_date: datetime | None = None,
 ) -> None:
     async with db.session() as session:
         if await session.get(Author, author) is None:
@@ -46,7 +47,7 @@ async def _seed(
                 page_count=pages,
                 total_bookmarks=bookmarks,
                 total_view=views,
-                create_date=datetime(2026, 1, 1, tzinfo=UTC),
+                create_date=create_date or datetime(2026, 1, 1, tzinfo=UTC),
             )
         )
         await session.commit()
@@ -174,3 +175,54 @@ async def test_build_illust_query_returns_full_rows(db):
     assert illust.pid == 1
     assert bookmark.rank == 0
     assert author.name == "author1"
+
+
+async def test_pids_ordered_by_rank_not_insertion(db):
+    await _seed(db, 2, rank=1024)
+    await _seed(db, 3, rank=2048)
+    await _seed(db, 1, rank=0)
+    async with db.session() as session:
+        rows = (await session.execute(build_filtered_pids(IllustFilters()))).scalars().all()
+    assert rows == [1, 2, 3]
+
+
+async def test_pids_ordered_by_create_date_desc(db):
+    await _seed(db, 1, rank=0, create_date=datetime(2026, 1, 1, tzinfo=UTC))
+    await _seed(db, 2, rank=10, create_date=datetime(2026, 1, 3, tzinfo=UTC))
+    await _seed(db, 3, rank=20, create_date=datetime(2026, 1, 2, tzinfo=UTC))
+    async with db.session() as session:
+        rows = (
+            (await session.execute(build_filtered_pids(IllustFilters(sort="create_date"))))
+            .scalars()
+            .all()
+        )
+    assert rows == [2, 3, 1]
+
+
+async def test_rank_window_selects_by_position(db):
+    await _seed(db, 1, rank=0)
+    await _seed(db, 2, rank=1024)
+    await _seed(db, 3, rank=2048)
+    async with db.session() as session:
+        middle = (
+            (await session.execute(build_filtered_pids(IllustFilters(rank_start=1, rank_count=1))))
+            .scalars()
+            .all()
+        )
+        rest = (
+            (await session.execute(build_filtered_pids(IllustFilters(rank_start=1))))
+            .scalars()
+            .all()
+        )
+    assert middle == [2]
+    assert rest == [2, 3]
+
+
+async def test_no_conditions_combo_returns_everything(db):
+    await _seed(db, 1, rank=0)
+    await _seed(db, 2, rank=10, bm_state="unbookmarked")
+    await _seed(db, 3, rank=20, state="deleted")
+    filters = IllustFilters(include_deleted=True, include_unbookmarked=True)
+    async with db.session() as session:
+        rows = (await session.execute(build_filtered_pids(filters))).scalars().all()
+    assert rows == [1, 2, 3]

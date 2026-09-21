@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from sqlalchemy import Select, and_, exists, or_, select
+from sqlalchemy import Select, and_, exists, or_, select, true
 
 from pixiv_archive.db.models import Author, Bookmark, Illust, IllustTag, Tag
 
@@ -102,10 +102,11 @@ def _apply_filters(stmt: Select[Any], filters: IllustFilters) -> Select[Any]:
 
     Shared by the row query and the pid query so both stay in sync.
     """
+    conditions = _base_conditions(filters)
     stmt = (
         stmt.join(Bookmark, Bookmark.pid == Illust.pid)
         .join(Author, Author.id == Illust.author_id)
-        .where(and_(*_base_conditions(filters)))
+        .where(and_(true(), *conditions))
     )
     for tag_name in filters.tags:
         stmt = stmt.where(
