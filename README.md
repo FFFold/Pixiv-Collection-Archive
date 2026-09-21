@@ -193,10 +193,25 @@ npm run build
 | POST | `/api/downloads` | 触发阶段 B（scope: all_missing/author/selected/rank-range/filter；filter 支持与画廊相同的筛选字段） |
 | GET | `/api/tasks` | 任务列表与状态（可取消） |
 | GET | `/api/events` | SSE 实时进度事件流 |
-| GET | `/api/stats` | 统计（数量 / 页状态 / 体积） |
-| POST | `/api/export` | 导出 zip（JSON 元数据 / 原图） |
+| GET | `/api/stats` | 统计（数量 / 页状态 / 体积分布，体积来自本地统计列） |
+| POST | `/api/export` | 导出 zip（JSON 元数据 / 原图；可按 pids、按筛选或按作者分组） |
+| POST | `/api/maintenance/rebuild-stats` | 重建存储统计（后台任务） |
+| GET | `/api/maintenance/repair-download-state/preview` | 预览下载状态修复 |
+| POST | `/api/maintenance/repair-download-state` | 执行下载状态修复（后台任务） |
+| POST | `/api/maintenance/db-check` | 数据库体检（只读报告） |
 
 定时同步由服务内置调度器负责（`SYNC_INTERVAL`，可选 `SYNC_FULL_CRON`）。
+
+维护（升级到带体积统计列的版本后，体积显示为 0 属正常，运行一次重建即可）：
+
+```bash
+uv run python -m pixiv_archive maintain rebuild-stats
+uv run python -m pixiv_archive maintain db-check
+uv run python -m pixiv_archive maintain repair-download-state --yes
+```
+
+或在 WebUI「设置 → 维护」中执行同样的操作。
+
 ## 文档
 
 - 设计文档：`docs/superpowers/specs/2026-09-20-pixiv-collection-archive-design.md`

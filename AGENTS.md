@@ -45,6 +45,7 @@ DB migrations live in `src/pixiv_archive/db/migrations/versions/`; apply with `a
 - `download/` = stage B download worker. **It never calls the pixiv API** — all URLs come from stage A rows in the DB. `reset_running_jobs` gives crash recovery/resume; `--retry-failed` resets failed jobs.
 - `media/` = file layout under `$DATA_DIR/works/{pid}/` (`meta.json`, `preview.jpg`, `original/`, `thumb.webp`, `source.zip`, `animation.mp4`) and ugoira ffmpeg transcode.
 - `web/` = FastAPI app. Routers query the DB directly; they do not go through a service layer. Task cancellation is cooperative and only applies between sync pages (via `TaskContext.progress`).
+- `maintenance/` = DB 与 `works/` 目录的对账（重建体积统计、修复下载状态、体检）；Web 端通过 `/api/maintenance/*` 以任务形式调用，CLI 为 `maintain` 子命令。
 - `sync/factory.py` builds/tears down `Database`, `httpx.AsyncClient`, `PixivClient`, storage, downloader, service/worker.
 
 ## Gotchas
@@ -56,5 +57,6 @@ DB migrations live in `src/pixiv_archive/db/migrations/versions/`; apply with `a
 - Tests import helpers from `tests/` directly (`from fakes import ...`) because `pythonpath = ["tests"]`; unit tests create their own temp DB and call `create_all()` instead of Alembic.
 - Rate limiting (`API_MIN_INTERVAL_MS`, default 800 ms) serializes all API requests globally; image downloads use a separate `IMAGE_CONCURRENCY` path.
 - `Illust.state` is `active`/`deleted` (deleted = pixiv stub or placeholder); gallery filters default to hiding deleted, `only_deleted`/`include_deleted` expose them, and `/api/export` deliberately includes every row (no `state` filter).
+- 迁移 `0004` 只加体积统计列（`byte_size` / `thumb_ready` / `animation_ready`，默认 0），历史数据需通过「设置 → 维护 → 重建存储统计」或 CLI `maintain rebuild-stats` 回填；`/api/stats` 的 `stats_stale` 指示是否尚未回填。worker 每次写文件后都会重算这三列，因此新下载无需回填。
 - Docker: `.dockerignore` intentionally excludes `frontend/dist` (the image's frontend stage builds into `web/static`; only `frontend/node_modules` is needed off). `docker-entrypoint.sh` runs as root, fixes `$DATA_DIR` ownership, then `exec gosu appuser "$@"`; keep it LF-only (`.gitattributes` enforces this) and remember a root bind-mount hides the image's `/data` chown.
 - Frontend UI copy is Chinese (`zh-CN`); keep labels in Chinese. Tailwind 4 is CSS-first (tokens in `src/index.css` `@theme`, no `tailwind.config.js`). API calls go through `apiFetch` in `src/api/client.ts` (relative paths, session cookie); a frontend `npm run dev` server does not update the committed build.
