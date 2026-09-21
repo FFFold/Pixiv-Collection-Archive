@@ -1112,16 +1112,21 @@ export interface DownloadRequest {
 `frontend/src/api/queries.ts` 中 `buildGalleryUrl` 替换为：
 
 ```ts
-const REPEATED_KEYS: Partial<Record<keyof GalleryQuery, string>> = {
+type ListKey = {
+  [K in keyof GalleryQuery]-?: NonNullable<GalleryQuery[K]> extends readonly unknown[] ? K : never;
+}[keyof GalleryQuery];
+
+export const GALLERY_LIST_PARAMS = {
   tags: "tag",
   author_ids: "author_id",
-};
+} as const satisfies Record<ListKey, string>;
 
 export function buildGalleryUrl(query: GalleryQuery): string {
   const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
+  const entries = Object.entries(query) as [keyof GalleryQuery, unknown][];
+  entries.forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
-    const paramName = REPEATED_KEYS[key as keyof GalleryQuery] ?? key;
+    const paramName = (GALLERY_LIST_PARAMS as Partial<Record<keyof GalleryQuery, string>>)[key] ?? key;
     if (Array.isArray(value)) {
       value.forEach((entry) => {
         if (entry === undefined || entry === null || entry === "") return;
@@ -1135,6 +1140,8 @@ export function buildGalleryUrl(query: GalleryQuery): string {
   return suffix ? `/api/gallery?${suffix}` : "/api/gallery";
 }
 ```
+
+**注意：** `GALLERY_LIST_PARAMS` 使用 `satisfies Record<ListKey, string>` 从 `GalleryQuery` 的数组字段推导键集合——以后新增数组型筛选字段若忘记加进映射，`tsc` 会报错（防止 `?tags=` 这种被后端静默忽略的参数名）。Task 6 的 URL hook 必须复用这个映射（`import { GALLERY_LIST_PARAMS } from "../api/queries"`），不要重复定义。
 
 - [ ] **Step 4: 运行测试确认通过**
 
@@ -1231,6 +1238,7 @@ import { useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { GalleryQuery } from "../api/types";
+import { GALLERY_LIST_PARAMS } from "../api/queries";
 import { PAGE_SIZE } from "../lib/constants";
 
 const SINGLE_KEYS = [
@@ -1257,12 +1265,7 @@ const SINGLE_KEYS = [
 ] as const;
 
 type SingleKey = (typeof SINGLE_KEYS)[number];
-type ListKey = "tags" | "author_ids";
-
-const LIST_PARAM_NAMES: Record<ListKey, string> = {
-  tags: "tag",
-  author_ids: "author_id",
-};
+type ListKey = keyof typeof GALLERY_LIST_PARAMS;
 
 const INT_KEYS = new Set<SingleKey>([
   "offset",
@@ -1322,8 +1325,8 @@ export function useGalleryQueryState(
       if (raw === null || raw === "") return;
       (parsed as Record<string, unknown>)[key] = parseSingle(key, raw);
     });
-    (Object.keys(LIST_PARAM_NAMES) as ListKey[]).forEach((key) => {
-      const raw = searchParams.getAll(LIST_PARAM_NAMES[key]);
+    (Object.keys(GALLERY_LIST_PARAMS) as ListKey[]).forEach((key) => {
+      const raw = searchParams.getAll(GALLERY_LIST_PARAMS[key]);
       if (raw.length === 0) return;
       if (key === "author_ids") {
         const ids = raw.map(Number).filter((value) => Number.isFinite(value));
@@ -1339,8 +1342,8 @@ export function useGalleryQueryState(
     (update: Partial<GalleryQuery>) => {
       const next = new URLSearchParams(searchParams);
       Object.entries(update).forEach(([key, value]) => {
-        if (key === "tags" || key === "author_ids") {
-          const paramName = LIST_PARAM_NAMES[key];
+        if (key in GALLERY_LIST_PARAMS) {
+          const paramName = GALLERY_LIST_PARAMS[key as ListKey];
           next.delete(paramName);
           if (Array.isArray(value) && value.length > 0) {
             value.forEach((entry) => next.append(paramName, String(entry)));
