@@ -65,4 +65,26 @@ describe("Pagination", () => {
     await userEvent.keyboard("{ArrowRight}");
     expect(onChange).toHaveBeenCalledWith(120);
   });
+
+  it("ignores arrow keys while the page input is focused", async () => {
+    const onChange = vi.fn();
+    render(<Pagination offset={60} limit={60} total={200} onChange={onChange} />);
+    await userEvent.click(screen.getByLabelText("页码"));
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("goes back with the left arrow key", async () => {
+    const onChange = vi.fn();
+    render(<Pagination offset={60} limit={60} total={200} onChange={onChange} />);
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(onChange).toHaveBeenCalledWith(0);
+  });
+
+  it("does nothing with the left arrow key on the first page", async () => {
+    const onChange = vi.fn();
+    render(<Pagination offset={0} limit={60} total={200} onChange={onChange} />);
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });
