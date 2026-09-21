@@ -532,10 +532,11 @@ git commit -m "refactor(web): use shared illust filters in gallery query"
 
 ---
 
-### Task 3: 新增路由参数测试（多标签 / 多作者 / 区间 / limit 上限）
+### Task 3: 新增路由参数测试（多标签 / 多作者 / 区间 / limit 上限）+ 空 tag 兼容修复
 
 **Files:**
 - Test: `tests/test_web_routers_gallery.py`（追加用例）
+- Modify: `src/pixiv_archive/web/routers/gallery.py`（空 tag 归一化）
 
 - [ ] **Step 1: 追加失败测试**
 
@@ -579,6 +580,17 @@ async def test_gallery_range_filters(client):
     books = await client.get("/api/gallery", params={"bookmarks_min": 1})
     assert books.json()["total"] == 0
 
+    views = await client.get("/api/gallery", params={"views_max": 0})
+    assert views.json()["total"] == 2
+
+
+async def test_gallery_empty_tag_is_ignored(client):
+    """`?tag=` must behave like no tag filter (pre-refactor behavior)."""
+    _login(client)
+    response = await client.get("/api/gallery", params={"tag": ""})
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+
 
 async def test_gallery_limit_accepts_240(client):
     _login(client)
@@ -593,17 +605,39 @@ async def test_gallery_limit_accepts_240(client):
 - [ ] **Step 2: 运行测试确认失败**
 
 Run: `uv run pytest tests/test_web_routers_gallery.py -q`
-Expected: 新用例 FAIL（`test_gallery_multi_tag_and_author_filters` 与 `test_gallery_range_filters` 应已由 Task 2 实现，若通过则直接进入第 3 步；`limit=240` 用例应在 Task 2 后通过）。**若全部通过，说明 Task 2 已覆盖，仍保留这些回归用例。**
+Expected: `test_gallery_empty_tag_is_ignored` FAIL（`?tag=` 目前作为空字符串标签匹配，返回 0 条）；其余新用例应已由 Task 2 实现并直接通过。
 
-- [ ] **Step 3: 运行测试确认通过**
+- [ ] **Step 3: 修复空 tag 归一化**
+
+`src/pixiv_archive/web/routers/gallery.py` 中：
+
+- import 行 `from pixiv_archive.db.query import IllustFilters` 不变
+- 在 `filters = IllustFilters(` 之前增加：
+
+```python
+    cleaned_tags = [name for name in (tag or []) if name]
+    filters = IllustFilters(
+        sort=sort,
+        tags=cleaned_tags,
+        ...
+```
+
+（即把 `tags=tag or []` 改为 `tags=cleaned_tags`；`author_id` 保持 `author_id or []`，因为 int 参数的空串会被 FastAPI 直接拒绝为 422，不存在同类问题。）
+
+- [ ] **Step 4: 运行测试确认通过**
 
 Run: `uv run pytest tests/test_web_routers_gallery.py -q`
 Expected: 全部通过
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: 全量校验**
+
+Run: `uv run ruff check src tests && uv run ruff format --check src tests && uv run mypy && uv run pytest -q`
+Expected: 全部通过
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add tests/test_web_routers_gallery.py
+git add tests/test_web_routers_gallery.py src/pixiv_archive/web/routers/gallery.py
 git commit -m "test(web): cover multi-tag, multi-author and range gallery filters"
 ```
 
