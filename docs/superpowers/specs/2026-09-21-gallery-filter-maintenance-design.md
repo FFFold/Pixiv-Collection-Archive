@@ -128,7 +128,9 @@ def build_illust_query(filters: IllustFilters) -> Select[Any]:
 | `bookmarks_min` / `bookmarks_max` | `int >= 0` | 收藏数区间 |
 | `views_min` / `views_max` | `int >= 0` | 浏览数区间 |
 
-FastAPI 用 `tag: list[str] = Query(default=[])` / `author_id: list[int] = Query(default=[])` 接收重复参数（**保留原参数名**，`?tag=a` 仍有效，`?tag=a&tag=b` 为 AND；`author_id` 同理，多值为 IN）。请求体字段名相应为 `tags` / `author_ids`（JSON 中避免与单数混用），由路由层映射。
+FastAPI 查询参数保持单数名：`tag: Annotated[list[str], Query()] = []`、`author_id: Annotated[list[int], Query()] = []`（`?tag=a&tag=b`）。**注意**：原 `author_id: int | None` 变为列表后，OpenAPI schema 变化属预期；行为上单值等价。请求体字段用 `tags` / `author_ids`（JSON 中避免与单数混用），由路由层映射。
+
+`limit` 上限从 200 提升到 500（每页 240 需要）。
 
 响应结构不变（`GalleryItem` 已含全部展示字段）。
 
@@ -144,20 +146,20 @@ FastAPI 用 `tag: list[str] = Query(default=[])` / `author_id: list[int] = Query
 
 `ExportRequest` 增加同一批筛选字段。`_selected_pids` 改用 `build_illust_query`：
 
-- 若传 `pids`，则按 pids 精确导出（与筛选条件取交集，遵循默认 `active`）。
+- 若传 `pids`，则按 pids 精确导出（保留旧行为：**包含已失效作品**；`x_restrict` / `only_downloaded` 继续生效，现有测试 `test_export_includes_deleted_works` 依赖此行为）。
 - 新增 `use_filter` 布尔字段：为 `true` 时按筛选条件导出，语义与画廊一致（默认 `active`，不含已失效作品）。
-- 两者都为假时保持旧行为（导出全部行，含 deleted，AGENTS.md 已注明的 `/api/export` 特殊语义），前端旧的"全部/条件"表单走这条路径。
+- `pids` 与 `use_filter` 互斥，`pids` 优先；两者都为假时保持旧行为（导出全部行，含 deleted），前端旧的"全部/条件"表单走这条路径。
 
 ### 5.4 维护接口（子项目 ②）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/maintenance/rebuild-stats` | 后台任务：扫描 `works/` 回填 `byte_size` / `thumb_ready` / `animation_ready` |
-| `POST` | `/api/maintenance/repair-download-state?dry_run=true` | 预览：按文件系统计算将要修正的页数与作品数，返回计数，不改库 |
-| `POST` | `/api/maintenance/repair-download-state?dry_run=false` | 后台任务：按文件系统修正 `has_original` / `page_downloaded_count` / `illust_page.download_state` |
+| `GET` | `/api/maintenance/repair-download-state/preview` | 只读预览：按文件系统计算将要修正的页数与作品数，返回计数，不改库 |
+| `POST` | `/api/maintenance/repair-download-state` | 后台任务：按文件系统修正 `has_original` / `page_downloaded_count` / `illust_page.download_state` |
 | `POST` | `/api/maintenance/db-check` | 同步只读体检：`PRAGMA integrity_check`、孤立行、DB/文件不一致、重复 rank，返回结构化报告 |
 
-`dry_run` 默认 `true`（防止误触）；UI 先预览展示计数，用户确认后再以 `dry_run=false` 提交任务。任务走 `TaskManager`（新 kind `maintenance`），SSE 复用；`db-check` 返回 JSON 报告（不建任务，操作很快）。
+`repair` 拆成 preview（GET，无副作用）+ 执行（POST）两个端点，避免一个端点混合返回两种语义；UI 先调 preview 展示计数，用户确认后再 POST 启动任务。任务走 `TaskManager`（新 kind `maintenance`），SSE 复用；`db-check` 返回 JSON 报告（不建任务，操作很快）。
 
 ## 6. 前端：画廊核心
 
@@ -211,7 +213,7 @@ interface SelectionValue {
 
 ### 6.5 画廊网格与卡片
 
-- `GalleryGrid` 传入页级选择所需的 pid 列表；不改瀑布流布局。
+- `GalleryGrid` 不接收整页 pid 列表；页级操作在 `Gallery.tsx` 内基于 `items` 直接调用 `SelectionContext` 的 `selectMany` / `removeMany`。
 - `GalleryCard` 增加缩略图 `onError` 回退本地占位图（`/api/illust/{pid}/thumb` 已回退到 SVG 占位，但资源加载失败时前端仍需兜底）。
 
 ## 7. 导出增强（子项目 ②）
@@ -295,7 +297,7 @@ CLI parity：新增 `uv run python -m pixiv_archive maintain rebuild-stats|repai
 | `limit` 上限 200 与每页 240 冲突 | 后端上限提升到 500（仅影响查询，无新风险） |
 | 多标签 EXISTS 子查询在超大数据量下变慢 | `illust_tag` 已有 `(pid, tag_id)` 主键；`tag.name` 唯一索引；必要时先在子查询里按 name 取 id 列表 |
 | `byte_size` 回填前后统计不一致 | `/api/stats` 暴露 `stats_stale`，UI 提示重建；任务完成后自动刷新 |
-| `repair-download-state` 误改数据 | `dry_run` 默认 true，先返回预览计数，UI 二次确认后再执行；仅修正文件系统可观测的事实 |
+| `repair-download-state` 误改数据 | preview 端点只读预览计数，UI 二次确认后再 POST 执行；仅修正文件系统可观测的事实 |
 | 选择状态跨路由保留导致详情页误操作 | 选择面板提供逐项移除与清空；下载前确认 pids 数量 |
 | URL 参数爆炸（多标签/多作者） | 参数上限（各 20 个），超出时忽略并在 UI 提示 |
 
