@@ -2,9 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiFetch } from "./client";
 import type {
+  DbCheckReport,
   DownloadRequest,
   ExportRequest,
   ExportResponse,
+  MaintenancePreview,
   MeResponse,
   TaskOut,
 } from "./types";
@@ -72,5 +74,41 @@ export function useStartExport() {
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["tasks"] });
     },
+  });
+}
+
+export function useRebuildStats() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<TaskOut>("/api/maintenance/rebuild-stats", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["tasks"] });
+      void client.invalidateQueries({ queryKey: ["stats"] });
+    },
+  });
+}
+
+export function usePreviewRepair() {
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<MaintenancePreview>("/api/maintenance/repair-download-state/preview"),
+  });
+}
+
+export function useRepairDownloadState() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<TaskOut>("/api/maintenance/repair-download-state", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["tasks"] });
+      void client.invalidateQueries({ queryKey: ["stats"] });
+    },
+  });
+}
+
+export function useDbCheck() {
+  return useMutation({
+    mutationFn: () => apiFetch<DbCheckReport>("/api/maintenance/db-check", { method: "POST" }),
   });
 }

@@ -1,4 +1,5 @@
 import { useLogout } from "../api/mutations";
+import MaintenanceCard from "../components/MaintenanceCard";
 
 export default function Settings() {
   const logout = useLogout();
@@ -29,6 +30,8 @@ export default function Settings() {
           详见仓库 README 的配置表。
         </p>
       </div>
+
+      <MaintenanceCard />
 
       <div className="rounded-lg border border-border-subtle bg-surface-raised p-4 text-sm">
         <div className="mb-2 font-medium">接口文档</div>

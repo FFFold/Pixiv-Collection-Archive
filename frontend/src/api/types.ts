@@ -101,6 +101,10 @@ export interface StatsOut {
   animation_ready: number;
   by_type: Record<string, number>;
   by_restrict: Record<string, number>;
+  by_type_bytes: Record<string, number>;
+  by_restrict_bytes: Record<string, number>;
+  top_authors_bytes: { id: number; name: string; bytes: number; illust_count: number }[];
+  stats_stale: boolean;
 }
 
 export interface MeResponse {
@@ -167,4 +171,36 @@ export interface ExportRequest {
   pids?: number[];
   x_restrict?: number;
   only_downloaded?: boolean;
+  group_by_author?: boolean;
+  use_filter?: boolean;
+  tags?: string[];
+  author_ids?: number[];
+  q?: string;
+  type?: "illust" | "ugoira";
+  downloaded?: boolean;
+  restrict?: "public" | "private";
+  only_unbookmarked?: boolean;
+  include_unbookmarked?: boolean;
+  page_min?: number;
+  page_max?: number;
+  bookmarks_min?: number;
+  bookmarks_max?: number;
+  views_min?: number;
+  views_max?: number;
+}
+
+export interface MaintenancePreview {
+  pages_to_reset: number;
+  works_to_fix: number;
+}
+
+export interface DbCheckIssue {
+  kind: string;
+  count: number;
+  samples: (number | string)[];
+}
+
+export interface DbCheckReport {
+  ok: boolean;
+  issues: DbCheckIssue[];
 }
