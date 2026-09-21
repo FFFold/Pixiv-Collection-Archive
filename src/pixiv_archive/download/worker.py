@@ -11,7 +11,7 @@ from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import Illust, IllustPage, UgoiraMeta, utcnow
 from pixiv_archive.db.repo import downloads
 from pixiv_archive.download.scope import DownloadScope, resolve_scope
-from pixiv_archive.media.storage import WorksStorage, atomic_write_bytes
+from pixiv_archive.media.storage import WorksStorage, atomic_write_bytes, file_size
 from pixiv_archive.media.thumbnails import generate_thumb, is_valid_image
 from pixiv_archive.media.ugoira import transcode_to_mp4
 
@@ -194,6 +194,7 @@ class DownloadWorker:
                 report.pages_failed += 1
                 return False, False
             atomic_write_bytes(dest, data)
+            await self._recompute_storage_stats(pid)
         await self._mark_page_done(pid, target)
         report.pages_done += 1
         return True, False
@@ -210,6 +211,7 @@ class DownloadWorker:
             return False, False
         generated = await asyncio.to_thread(generate_thumb, source, dest)
         if generated:
+            await self._recompute_storage_stats(pid)
             report.thumbs_done += 1
         return generated, False
 
@@ -242,6 +244,7 @@ class DownloadWorker:
                 return None
             destination = self._storage.original_dir(pid) / target
             atomic_write_bytes(destination, data)
+            await self._recompute_storage_stats(pid)
             await self._mark_page_done(pid, target)
             return destination
 
@@ -253,6 +256,7 @@ class DownloadWorker:
             return True, True
         ok = await self._ensure_ugoira_zip(pid)
         if ok:
+            await self._recompute_storage_stats(pid)
             report.ugoira_done += 1
         return ok, False
 
@@ -303,6 +307,7 @@ class DownloadWorker:
                 ffmpeg_bin=self._config.ffmpeg_bin,
             )
         if ok:
+            await self._recompute_storage_stats(pid)
             report.ugoira_done += 1
             return True, False
         return False, True  # no ffmpeg / invalid frames -> skip, keep the zip
@@ -315,6 +320,34 @@ class DownloadWorker:
             if path.suffix.lower() in IMAGE_SUFFIXES:
                 return path
         return None
+
+    async def _recompute_storage_stats(self, pid: int) -> None:
+        """Recompute byte size and ready flags from the on-disk layout.
+
+        Performed after every successful write; the per-work directory is
+        small, so a targeted rescan is cheaper and more robust than delta
+        bookkeeping across retries.
+        """
+        work = self._storage.work_dir(pid)
+        total = 0
+        original_dir = work / "original"
+        if original_dir.is_dir():
+            total += sum(file_size(path) for path in original_dir.iterdir() if path.is_file())
+        thumb = work / "thumb.webp"
+        animation = work / "animation.mp4"
+        zip_path = work / "source.zip"
+        total += file_size(thumb) + file_size(animation) + file_size(zip_path)
+        async with self._db.session() as session:
+            await session.execute(
+                update(Illust)
+                .where(Illust.pid == pid)
+                .values(
+                    byte_size=total,
+                    thumb_ready=thumb.is_file(),
+                    animation_ready=animation.is_file(),
+                )
+            )
+            await session.commit()
 
     async def _mark_page_done(self, pid: int, target: str) -> None:
         page_index = self._page_index_from_target(target)

@@ -252,3 +252,54 @@ async def test_worker_retry_failed_resets_jobs(db, tmp_path):
     second = await worker.run_scope(DownloadScope(kind="all_missing"))
     assert second.pages_done == 1
     assert second.failed == 0
+
+
+async def test_worker_tracks_byte_size_and_flags(db, tmp_path):
+    await _seed(db, 12, pages=1, type_="ugoira")
+    downloader = FakeDownloader()
+
+    async def fake_transcode(**kwargs) -> bool:
+        kwargs["dest"].parent.mkdir(parents=True, exist_ok=True)
+        kwargs["dest"].write_bytes(b"mp4-bytes")
+        return True
+
+    worker = make_worker(db, tmp_path, downloader, transcode=fake_transcode)
+    await worker.run_scope(DownloadScope(kind="all_missing"))
+
+    storage = WorksStorage(tmp_path / "works")
+    expected = (
+        (storage.original_dir(12) / "000_p0.jpg").stat().st_size
+        + storage.thumb_path(12).stat().st_size
+        + (storage.work_dir(12) / "source.zip").stat().st_size
+        + storage.animation_path(12).stat().st_size
+    )
+    async with db.session() as session:
+        illust = (await session.execute(select(Illust))).scalar_one()
+    assert illust.byte_size == expected
+    assert illust.thumb_ready is True
+    assert illust.animation_ready is True
+
+
+async def test_worker_ignores_repeat_download_for_byte_size(db, tmp_path):
+    await _seed(db, 13, pages=1)
+    downloader = FakeDownloader()
+    worker = make_worker(db, tmp_path, downloader)
+    await worker.run_scope(DownloadScope(kind="all_missing"))
+    async with db.session() as session:
+        first = (await session.execute(select(Illust))).scalar_one().byte_size
+
+    await worker.run_scope(DownloadScope(kind="all_missing"))
+    async with db.session() as session:
+        second = (await session.execute(select(Illust))).scalar_one().byte_size
+    assert second == first
+
+
+async def test_worker_marks_page_failed_and_keeps_thumb_flag_false(db, tmp_path):
+    await _seed(db, 14, pages=1)
+    downloader = FakeDownloader(fail_urls={"https://i.pximg.net/14_p0.jpg"})
+    worker = make_worker(db, tmp_path, downloader)
+    await worker.run_scope(DownloadScope(kind="all_missing"))
+    async with db.session() as session:
+        illust = (await session.execute(select(Illust))).scalar_one()
+    assert illust.byte_size == 0
+    assert illust.thumb_ready is False

@@ -52,3 +52,11 @@ class WorksStorage:
     def save_meta_json(self, pid: int, payload: dict[str, Any]) -> None:
         text = json.dumps(payload, ensure_ascii=False, indent=2)
         atomic_write_bytes(self.meta_path(pid), text.encode("utf-8"))
+
+
+def file_size(path: Path) -> int:
+    """Size in bytes, or 0 when the path does not exist."""
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
