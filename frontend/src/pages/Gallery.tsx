@@ -1,5 +1,4 @@
-import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useMemo } from "react";
 
 import { useStartDownload } from "../api/mutations";
 import { useGallery } from "../api/queries";
@@ -7,7 +6,9 @@ import type { GalleryQuery } from "../api/types";
 import GalleryGrid from "../components/GalleryGrid";
 import Pagination from "../components/Pagination";
 import Toolbar from "../components/Toolbar";
-import { useSelection } from "../hooks/useSelection";
+import { useGalleryFilters } from "../contexts/GalleryFiltersContext";
+import { useSelection } from "../contexts/SelectionContext";
+import { useGalleryQueryState } from "../hooks/useGalleryQueryState";
 import { PAGE_SIZE } from "../lib/constants";
 
 interface Props {
@@ -15,50 +16,58 @@ interface Props {
 }
 
 export default function Gallery({ initialOnlyUnbookmarked = false }: Props) {
-  const [searchParams] = useSearchParams();
-  const [query, setQuery] = useState<GalleryQuery>(() => {
-    const tag = searchParams.get("tag") ?? undefined;
-    return {
-      offset: 0,
-      limit: PAGE_SIZE,
-      sort: "rank",
-      tag,
-      only_unbookmarked: initialOnlyUnbookmarked || undefined,
-    };
-  });
-  const [notice, setNotice] = useState<string | null>(null);
+  const initial = useMemo(
+    () => (initialOnlyUnbookmarked ? { only_unbookmarked: true } : {}),
+    [initialOnlyUnbookmarked],
+  );
+  const { query, patch } = useGalleryQueryState(initial);
+  const { setFilters } = useGalleryFilters();
   const { data, isLoading, isError, error } = useGallery(query);
   const selection = useSelection();
   const download = useStartDownload();
 
-  const patch = (update: Partial<GalleryQuery>) =>
-    setQuery((current) => ({ ...current, ...update }));
-
   const items = useMemo(() => data?.items ?? [], [data]);
+  const pagePids = useMemo(() => items.map((item) => item.pid), [items]);
+  const undownloadedPids = useMemo(
+    () => items.filter((item) => !item.has_original).map((item) => item.pid),
+    [items],
+  );
+
+  useEffect(() => {
+    setFilters(query);
+  }, [query, setFilters]);
 
   const downloadSelected = () => {
     const pids = Array.from(selection.selected);
     download.mutate(
       { scope: "selected", pids, with_thumbs: true },
-      {
-        onSuccess: () => {
-          selection.clear();
-          setNotice(`已开始下载 ${pids.length} 个作品`);
-        },
-      },
+      { onSuccess: () => selection.clear() },
     );
   };
 
   const downloadAllMissing = () => {
-    download.mutate(
-      {
-        scope: "filter",
-        x_restrict: query.x_restrict,
-        type: query.type,
-        with_thumbs: true,
-      },
-      { onSuccess: () => setNotice("已开始下载筛选范围内的未下载作品") },
-    );
+    const filter: Partial<GalleryQuery> = {
+      tags: query.tags,
+      author_ids: query.author_ids,
+      q: query.q,
+      type: query.type,
+      x_restrict: query.x_restrict,
+      downloaded: false,
+      restrict: query.restrict,
+      only_unbookmarked: query.only_unbookmarked,
+      include_unbookmarked: query.include_unbookmarked,
+      page_min: query.page_min,
+      page_max: query.page_max,
+      bookmarks_min: query.bookmarks_min,
+      bookmarks_max: query.bookmarks_max,
+      views_min: query.views_min,
+      views_max: query.views_max,
+    };
+    download.mutate({
+      scope: "filter",
+      ...filter,
+      with_thumbs: true,
+    });
   };
 
   return (
@@ -66,17 +75,12 @@ export default function Gallery({ initialOnlyUnbookmarked = false }: Props) {
       <Toolbar
         query={query}
         onChange={patch}
-        selectedCount={selection.count}
+        pagePids={pagePids}
+        undownloadedPids={undownloadedPids}
         onDownloadSelected={downloadSelected}
         onDownloadAllMissing={downloadAllMissing}
         downloadPending={download.isPending}
       />
-
-      {notice ? (
-        <div className="mx-4 mt-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
-          {notice}
-        </div>
-      ) : null}
 
       <div className="flex-1 px-4 pt-4">
         {isLoading ? (
@@ -102,6 +106,7 @@ export default function Gallery({ initialOnlyUnbookmarked = false }: Props) {
           limit={query.limit ?? PAGE_SIZE}
           total={data?.total ?? 0}
           onChange={(offset) => patch({ offset })}
+          onLimitChange={(limit) => patch({ limit, offset: 0 })}
         />
       </div>
     </div>

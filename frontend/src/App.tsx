@@ -4,6 +4,8 @@ import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
 import { setUnauthorizedHandler } from "./api/client";
 import { useMe } from "./api/queries";
 import AppLayout from "./components/AppLayout";
+import { GalleryFiltersProvider } from "./contexts/GalleryFiltersContext";
+import { SelectionProvider } from "./contexts/SelectionContext";
 import Export from "./pages/Export";
 import Gallery from "./pages/Gallery";
 import IllustDetail from "./pages/IllustDetail";
@@ -30,24 +32,28 @@ export default function App() {
   const authenticated = data?.authenticated ?? false;
 
   return (
-    <Routes>
-      <Route
-        path="/login"
-        element={authenticated ? <Navigate to="/" replace /> : <Login />}
-      />
-      <Route element={authenticated ? <AppLayout /> : <Navigate to="/login" replace />}>
-        <Route path="/" element={<Gallery key="all" />} />
-        <Route
-          path="/unbookmarked"
-          element={<Gallery key="unbookmarked" initialOnlyUnbookmarked />}
-        />
-        <Route path="/illust/:pid" element={<IllustDetail />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/stats" element={<Stats />} />
-        <Route path="/export" element={<Export />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <SelectionProvider>
+      <GalleryFiltersProvider>
+        <Routes>
+          <Route
+            path="/login"
+            element={authenticated ? <Navigate to="/" replace /> : <Login />}
+          />
+          <Route element={authenticated ? <AppLayout /> : <Navigate to="/login" replace />}>
+            <Route path="/" element={<Gallery key="all" />} />
+            <Route
+              path="/unbookmarked"
+              element={<Gallery key="unbookmarked" initialOnlyUnbookmarked />}
+            />
+            <Route path="/illust/:pid" element={<IllustDetail />} />
+            <Route path="/tasks" element={<Tasks />} />
+            <Route path="/stats" element={<Stats />} />
+            <Route path="/export" element={<Export />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </GalleryFiltersProvider>
+    </SelectionProvider>
   );
 }
