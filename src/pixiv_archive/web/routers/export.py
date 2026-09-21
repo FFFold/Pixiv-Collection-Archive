@@ -53,6 +53,8 @@ async def _selected_pids(session: AsyncSession, payload: ExportRequest) -> list[
             restrict=payload.restrict,
             only_unbookmarked=payload.only_unbookmarked,
             include_unbookmarked=payload.include_unbookmarked,
+            only_deleted=payload.only_deleted,
+            include_deleted=payload.include_deleted,
             page_min=payload.page_min,
             page_max=payload.page_max,
             bookmarks_min=payload.bookmarks_min,

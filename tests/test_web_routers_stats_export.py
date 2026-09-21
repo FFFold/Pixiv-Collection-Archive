@@ -254,6 +254,39 @@ async def test_export_by_filter_with_no_matches_is_422(client):
     assert response.status_code == 422
 
 
+async def test_export_by_filter_honours_include_deleted(client):
+    import io
+    import zipfile
+
+    from pixiv_archive.db.models import Illust
+
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        session.add(Illust(pid=50, title="gone", author_id=1, state="deleted"))
+        await session.commit()
+    async with database.session() as session:
+        session.add(Bookmark(pid=50, restrict="public", rank=5120, state="active"))
+        await session.commit()
+
+    response = await client.post(
+        "/api/export",
+        json={
+            "include_metadata": True,
+            "include_originals": False,
+            "use_filter": True,
+            "include_deleted": True,
+        },
+    )
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    await client._transport.app.state.tasks.wait(task_id)  # type: ignore[union-attr]
+    download = await client.get(f"/api/export/{task_id}/download")
+    archive = zipfile.ZipFile(io.BytesIO(download.content))
+    names = archive.namelist()
+    assert "metadata/50.json" in names
+    assert "metadata/10.json" in names
+
+
 async def test_export_groups_by_author_when_requested(client):
     import io
     import zipfile

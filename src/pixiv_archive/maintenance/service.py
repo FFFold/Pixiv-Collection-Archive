@@ -10,6 +10,7 @@ from pixiv_archive.db.models import Bookmark, Illust, IllustPage, IllustTag
 from pixiv_archive.media.storage import file_size
 
 IMAGE_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif", ".webp")
+_COMMIT_BATCH = 200
 
 
 def _work_files(works: Path, pid: int) -> tuple[list[Path], Path, Path, Path]:
@@ -27,7 +28,7 @@ async def rebuild_storage_stats(session: AsyncSession, works: Path) -> dict[str,
     """Recompute byte_size / thumb_ready / animation_ready for every illust."""
     pids = list((await session.execute(select(Illust.pid))).scalars().all())
     total_bytes = 0
-    for pid in pids:
+    for index, pid in enumerate(pids, start=1):
         originals, thumb, animation, zip_path = _work_files(works, pid)
         size = sum(file_size(path) for path in (*originals, thumb, animation, zip_path))
         total_bytes += size
@@ -40,6 +41,8 @@ async def rebuild_storage_stats(session: AsyncSession, works: Path) -> dict[str,
                 animation_ready=animation.is_file(),
             )
         )
+        if index % _COMMIT_BATCH == 0:
+            await session.commit()
     await session.commit()
     return {"works": len(pids), "total_bytes": total_bytes}
 
@@ -82,7 +85,7 @@ async def repair_download_state(session: AsyncSession, works: Path) -> dict[str,
     by_pid: dict[int, list[tuple[int, str]]] = {}
     for pid, page_index, state in rows:
         by_pid.setdefault(pid, []).append((page_index, state))
-    for pid, pages in by_pid.items():
+    for index, (pid, pages) in enumerate(by_pid.items(), start=1):
         originals, *_ = _work_files(works, pid)
         present = {path.name.split("_", 1)[0] for path in originals}
         for page_index, state in pages:
@@ -102,13 +105,15 @@ async def repair_download_state(session: AsyncSession, works: Path) -> dict[str,
                 )
                 fixed_pages += 1
         total = len(pages)
-        done = len(present)
+        done = sum(1 for page_index, _ in pages if f"{page_index:03d}" in present)
         await session.execute(
             update(Illust)
             .where(Illust.pid == pid)
             .values(page_downloaded_count=done, has_original=(done == total and total > 0))
         )
         touched_works += 1
+        if index % _COMMIT_BATCH == 0:
+            await session.commit()
     await session.commit()
     return {"pages_fixed": fixed_pages, "works_fixed": touched_works}
 
@@ -117,9 +122,15 @@ async def db_check(session: AsyncSession, works: Path) -> dict[str, Any]:
     """Read-only integrity report: DB internals plus DB/disk mismatches."""
     issues: list[dict[str, Any]] = []
 
-    integrity = (await session.execute(text("PRAGMA integrity_check"))).scalar_one()
-    if integrity != "ok":
-        issues.append({"kind": "integrity", "count": 1, "samples": [str(integrity)]})
+    integrity = (await session.execute(text("PRAGMA integrity_check"))).scalars().all()
+    if integrity != ["ok"]:
+        issues.append(
+            {
+                "kind": "integrity",
+                "count": len(integrity),
+                "samples": [str(entry) for entry in integrity[:5]],
+            }
+        )
 
     for name, stmt in (
         (

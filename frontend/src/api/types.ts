@@ -181,6 +181,8 @@ export interface ExportRequest {
   restrict?: "public" | "private";
   only_unbookmarked?: boolean;
   include_unbookmarked?: boolean;
+  only_deleted?: boolean;
+  include_deleted?: boolean;
   page_min?: number;
   page_max?: number;
   bookmarks_min?: number;

@@ -169,6 +169,8 @@ class ExportRequest(BaseModel):
     restrict: str | None = None
     only_unbookmarked: bool = False
     include_unbookmarked: bool = False
+    only_deleted: bool = False
+    include_deleted: bool = False
     page_min: int | None = None
     page_max: int | None = None
     bookmarks_min: int | None = None

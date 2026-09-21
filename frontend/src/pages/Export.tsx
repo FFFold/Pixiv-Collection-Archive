@@ -17,6 +17,8 @@ const FILTER_KEYS: (keyof GalleryQuery)[] = [
   "restrict",
   "only_unbookmarked",
   "include_unbookmarked",
+  "only_deleted",
+  "include_deleted",
   "page_min",
   "page_max",
   "bookmarks_min",

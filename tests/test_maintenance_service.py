@@ -124,3 +124,63 @@ async def test_db_check_reports_orphans_and_mismatch(db, tmp_path):
     assert report["ok"] is False
     kinds = {issue["kind"] for issue in report["issues"]}
     assert "missing_files" in kinds
+
+
+async def test_repair_ignores_stray_files_beyond_known_pages(db, tmp_path):
+    """A stray file in original/ must not inflate counts or flip has_original."""
+    await _seed(db, 7, pages=1)
+    works = tmp_path / "works"
+    _write_work(works, 7, pages=1, thumb=True)
+    # stray file (not a known IllustPage index)
+    (works / "7" / "original" / "999_p999.jpg").write_bytes(b"stray")
+    async with db.session() as session:
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 7)
+            .values(has_original=True, page_downloaded_count=1)
+        )
+        await session.execute(
+            IllustPage.__table__.update().where(IllustPage.pid == 7).values(download_state="done")
+        )
+        await session.commit()
+
+    async with db.session() as session:
+        await repair_download_state(session, works)
+
+    async with db.session() as session:
+        illust = await session.get(Illust, 7)
+        page = (await session.execute(select(IllustPage))).scalar_one()
+    assert page.download_state == "done"
+    assert illust.page_downloaded_count == 1
+    assert illust.has_original is True
+
+
+async def test_db_check_handles_multi_row_integrity_output(db, tmp_path, monkeypatch):
+    """A corrupt database returns several integrity_check rows, not one."""
+    await _seed(db, 8, pages=1)
+    works = tmp_path / "works"
+
+    from pixiv_archive.maintenance import service as service_module
+
+    real_execute = service_module.AsyncSession.execute
+
+    async def fake_execute(self, statement, *args, **kwargs):  # noqa: ANN001
+        if "integrity_check" in str(statement):
+
+            class MultiRow:
+                def scalars(self):
+                    class S:
+                        def all(self_inner):
+                            return ["rowid 3 missing", "rowid 7 missing"]
+
+                    return S()
+
+            return MultiRow()
+        return await real_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(service_module.AsyncSession, "execute", fake_execute)
+    async with db.session() as session:
+        report = await db_check(session, works)
+    assert report["ok"] is False
+    integrity = next(issue for issue in report["issues"] if issue["kind"] == "integrity")
+    assert integrity["count"] == 2

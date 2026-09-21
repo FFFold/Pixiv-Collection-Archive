@@ -21,6 +21,7 @@ class Database:
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
+            cursor.execute("PRAGMA busy_timeout=30000")
             cursor.close()
 
         self._session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
