@@ -40,6 +40,19 @@ def _scope_from_request(payload: DownloadRequest) -> DownloadScope:
         count=payload.count,
         x_restrict=payload.x_restrict,
         type=payload.type,
+        tags=payload.tags,
+        author_ids=payload.author_ids,
+        q=payload.q,
+        restrict=payload.restrict,
+        downloaded=payload.downloaded,
+        page_min=payload.page_min,
+        page_max=payload.page_max,
+        bookmarks_min=payload.bookmarks_min,
+        bookmarks_max=payload.bookmarks_max,
+        views_min=payload.views_min,
+        views_max=payload.views_max,
+        only_unbookmarked=payload.only_unbookmarked,
+        include_unbookmarked=payload.include_unbookmarked,
     )
 
 

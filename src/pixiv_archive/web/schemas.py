@@ -107,6 +107,20 @@ class DownloadRequest(BaseModel):
     x_restrict: int | None = None
     type: str | None = None
     with_thumbs: bool = True
+    # filter-scope extras (same fields as the gallery filters)
+    tags: list[str] = Field(default_factory=list)
+    author_ids: list[int] = Field(default_factory=list)
+    q: str | None = None
+    restrict: str | None = None
+    downloaded: bool | None = None
+    page_min: int | None = None
+    page_max: int | None = None
+    bookmarks_min: int | None = None
+    bookmarks_max: int | None = None
+    views_min: int | None = None
+    views_max: int | None = None
+    only_unbookmarked: bool = False
+    include_unbookmarked: bool = False
 
 
 class TaskOut(BaseModel):

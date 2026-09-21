@@ -1,7 +1,7 @@
 import pytest
 
 from pixiv_archive.db.engine import Database
-from pixiv_archive.db.models import Author, Illust, IllustPage, UgoiraMeta
+from pixiv_archive.db.models import Author, Bookmark, Illust, IllustPage, UgoiraMeta
 from pixiv_archive.db.repo import bookmarks
 from pixiv_archive.download.scope import (
     DownloadScope,
@@ -195,3 +195,76 @@ async def test_scope_rank_range_without_count_takes_all_after_start(db):
     async with db.session() as session:
         plan = await resolve_scope(session, DownloadScope(kind="rank_range", start=1))
     assert plan.pids == [20, 30]
+
+
+async def test_scope_filter_honours_page_and_tag_filters(db):
+    await _seed_illust(db, 10, rank=0, page_count=1)
+    await _seed_illust(db, 20, rank=10, page_count=6)
+    async with db.session() as session:
+        from pixiv_archive.db.models import IllustTag, Tag
+
+        tag = Tag(name="cat")
+        session.add(tag)
+        await session.flush()
+        session.add(IllustTag(pid=20, tag_id=tag.id, position=0))
+        await session.commit()
+    async with db.session() as session:
+        by_pages = await resolve_scope(
+            session, DownloadScope(kind="filter", page_min=2, page_max=10)
+        )
+        by_tag = await resolve_scope(session, DownloadScope(kind="filter", tags=["cat"]))
+    assert by_pages.pids == [20]
+    assert by_tag.pids == [20]
+
+
+async def test_scope_filter_honours_views_and_bookmarks_range(db):
+    await _seed_illust(db, 1, rank=0)
+    await _seed_illust(db, 2, rank=10)
+    async with db.session() as session:
+        await session.execute(
+            Illust.__table__.update().where(Illust.pid == 1).values(total_view=5, total_bookmarks=1)
+        )
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 2)
+            .values(total_view=5000, total_bookmarks=900)
+        )
+        await session.commit()
+    async with db.session() as session:
+        popular = await resolve_scope(session, DownloadScope(kind="filter", bookmarks_min=500))
+        rare = await resolve_scope(session, DownloadScope(kind="filter", views_max=100))
+    assert popular.pids == [2]
+    assert rare.pids == [1]
+
+
+async def test_scope_filter_honours_restrict_and_unbookmarked(db):
+    """Unbookmarked works are excluded from the default filter set.
+
+    ``include_unbookmarked`` widens the bookmark condition; work 1 stays
+    excluded while the flag is absent, and appears once the bookmark state
+    condition is relaxed.
+    """
+    await _seed_illust(db, 1, rank=0, state="unbookmarked")
+    await _seed_illust(db, 2, rank=10, state="active")
+    async with db.session() as session:
+        await session.execute(
+            Bookmark.__table__.update().where(Bookmark.pid == 1).values(restrict="private")
+        )
+        await session.commit()
+    async with db.session() as session:
+        private_default = await resolve_scope(
+            session, DownloadScope(kind="filter", restrict="private")
+        )
+        private_widened = await resolve_scope(
+            session,
+            DownloadScope(kind="filter", restrict="private", include_unbookmarked=True),
+        )
+        unbookmarked = await resolve_scope(
+            session,
+            DownloadScope(kind="filter", only_unbookmarked=True, include_unbookmarked=True),
+        )
+        default = await resolve_scope(session, DownloadScope(kind="filter", type="illust"))
+    assert private_default.pids == []
+    assert private_widened.pids == [1]
+    assert unbookmarked.pids == [1]
+    assert default.pids == [2]

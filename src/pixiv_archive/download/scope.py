@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
 
 import sqlalchemy as sa
-from sqlalchemy import Select, and_, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pixiv_archive.db.models import Bookmark, Illust, IllustPage, UgoiraMeta
+from pixiv_archive.db.models import Illust, IllustPage, UgoiraMeta
+from pixiv_archive.db.query import IllustFilters, build_filtered_pids
 
 
 @dataclass(frozen=True)
@@ -18,6 +19,20 @@ class DownloadScope:
     count: int | None = None
     x_restrict: int | None = None
     type: str | None = None
+    # filter-scope extras (shared with the gallery filters)
+    tags: list[str] = field(default_factory=list)
+    author_ids: list[int] = field(default_factory=list)
+    q: str | None = None
+    restrict: str | None = None
+    downloaded: bool | None = None
+    page_min: int | None = None
+    page_max: int | None = None
+    bookmarks_min: int | None = None
+    bookmarks_max: int | None = None
+    views_min: int | None = None
+    views_max: int | None = None
+    only_unbookmarked: bool = False
+    include_unbookmarked: bool = False
 
 
 @dataclass
@@ -33,29 +48,66 @@ def empty_scope_matches_nothing(scope: DownloadScope) -> bool:
     return (
         all(
             value is None
-            for value in (scope.author_id, scope.start, scope.count, scope.x_restrict, scope.type)
+            for value in (
+                scope.author_id,
+                scope.start,
+                scope.count,
+                scope.x_restrict,
+                scope.type,
+                scope.q,
+                scope.restrict,
+                scope.downloaded,
+                scope.page_min,
+                scope.page_max,
+                scope.bookmarks_min,
+                scope.bookmarks_max,
+                scope.views_min,
+                scope.views_max,
+            )
         )
         and not scope.pids
+        and not scope.tags
+        and not scope.author_ids
+        and not scope.only_unbookmarked
+        and not scope.include_unbookmarked
+    )
+
+
+def _filters_from_filter_scope(scope: DownloadScope) -> IllustFilters:
+    author_ids = list(scope.author_ids)
+    if scope.author_id is not None and scope.author_id not in author_ids:
+        author_ids.append(scope.author_id)
+    return IllustFilters(
+        tags=scope.tags,
+        author_ids=author_ids,
+        q=scope.q,
+        type=scope.type,
+        x_restrict=scope.x_restrict,
+        downloaded=scope.downloaded,
+        restrict=scope.restrict,
+        page_min=scope.page_min,
+        page_max=scope.page_max,
+        bookmarks_min=scope.bookmarks_min,
+        bookmarks_max=scope.bookmarks_max,
+        views_min=scope.views_min,
+        views_max=scope.views_max,
+        only_unbookmarked=scope.only_unbookmarked,
+        include_unbookmarked=scope.include_unbookmarked,
     )
 
 
 def build_illust_filter(scope: DownloadScope) -> Select[tuple[int]]:
-    """Build the SELECT over active, bookmarked illusts matching the scope."""
-    stmt = (
-        select(Illust.pid)
-        .join(Bookmark, Bookmark.pid == Illust.pid)
-        .where(Bookmark.state == "active", Illust.state == "active")
-    )
+    """Build the pid SELECT over active, bookmarked illusts matching the scope."""
     if scope.kind == "selected":
         if not scope.pids:
-            return stmt.where(sa.false())
-        return stmt.where(Illust.pid.in_(scope.pids)).order_by(Bookmark.rank)
+            return build_filtered_pids(IllustFilters()).where(sa.false())
+        return build_filtered_pids(IllustFilters()).where(Illust.pid.in_(scope.pids))
     if scope.kind == "author":
         if scope.author_id is None:
-            return stmt.where(sa.false())
-        return stmt.where(Illust.author_id == scope.author_id).order_by(Bookmark.rank)
+            return build_filtered_pids(IllustFilters()).where(sa.false())
+        return build_filtered_pids(IllustFilters(author_ids=[scope.author_id]))
     if scope.kind == "rank_range":
-        ordered = stmt.order_by(Bookmark.rank)
+        ordered = build_filtered_pids(IllustFilters())
         if scope.start is not None or scope.count is not None:
             start = scope.start or 0
             ordered = ordered.offset(start)
@@ -63,18 +115,14 @@ def build_illust_filter(scope: DownloadScope) -> Select[tuple[int]]:
                 ordered = ordered.limit(scope.count)
         return ordered
     if scope.kind == "filter":
-        conditions = []
-        if scope.x_restrict is not None:
-            conditions.append(Illust.x_restrict == scope.x_restrict)
-        if scope.type is not None:
-            conditions.append(Illust.type == scope.type)
-        if scope.author_id is not None:
-            conditions.append(Illust.author_id == scope.author_id)
+        if empty_scope_matches_nothing(scope):
+            return build_filtered_pids(IllustFilters()).where(sa.false())
+        stmt = build_filtered_pids(_filters_from_filter_scope(scope))
         if scope.pids:
-            conditions.append(Illust.pid.in_(scope.pids))
-        if conditions:
-            stmt = stmt.where(and_(*conditions))
-    return stmt.order_by(Bookmark.rank)
+            stmt = stmt.where(Illust.pid.in_(scope.pids))
+        return stmt
+    # all_missing: every active, bookmarked illust
+    return build_filtered_pids(IllustFilters())
 
 
 async def resolve_scope(session: AsyncSession, scope: DownloadScope) -> ScopePlan:
