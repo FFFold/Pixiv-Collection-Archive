@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from pixiv_archive.db.engine import Database
-from pixiv_archive.db.models import Author, Bookmark, Illust
+from pixiv_archive.db.models import Author, Bookmark, Illust, IllustTag, Tag
 from pixiv_archive.web.auth import SessionSigner
 from pixiv_archive.web.routers.auth import protected
 from pixiv_archive.web.routers.auth import router as auth_router
@@ -163,7 +163,6 @@ async def test_login_unavailable_without_token(client):
 async def test_gallery_multi_tag_and_author_filters(client):
     _login(client)
     database = client._transport.app.state.db  # type: ignore[union-attr]
-    from pixiv_archive.db.models import IllustTag, Tag
 
     async with database.session() as session:
         cat = Tag(name="cat")
@@ -177,28 +176,53 @@ async def test_gallery_multi_tag_and_author_filters(client):
         await session.commit()
 
     both = await client.get("/api/gallery", params=[("tag", "cat"), ("tag", "cute")])
+    assert both.status_code == 200
     assert [item["pid"] for item in both.json()["items"]] == [10]
 
     same_author = await client.get("/api/gallery", params=[("author_id", 1)])
+    assert same_author.status_code == 200
     assert same_author.json()["total"] == 2
 
+    union_authors = await client.get("/api/gallery", params=[("author_id", 1), ("author_id", 99)])
+    assert union_authors.status_code == 200
+    assert union_authors.json()["total"] == 2
+
     other_author = await client.get("/api/gallery", params=[("author_id", 99)])
+    assert other_author.status_code == 200
     assert other_author.json()["total"] == 0
 
 
 async def test_gallery_range_filters(client):
     _login(client)
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 10)
+            .values(total_view=5, total_bookmarks=1)
+        )
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 20)
+            .values(total_view=5000, total_bookmarks=900)
+        )
+        await session.commit()
+
     pages = await client.get("/api/gallery", params={"page_min": 2})
+    assert pages.status_code == 200
     assert [item["pid"] for item in pages.json()["items"]] == [10]
 
     pages_none = await client.get("/api/gallery", params={"page_min": 5})
-    assert pages_none.json()["total"] == 0
+    assert pages_none.status_code == 200
+    assert pages_none.json()["items"] == []
 
-    books = await client.get("/api/gallery", params={"bookmarks_min": 1})
-    assert books.json()["total"] == 0
+    books = await client.get("/api/gallery", params={"bookmarks_min": 500})
+    assert books.status_code == 200
+    assert [item["pid"] for item in books.json()["items"]] == [20]
 
-    views = await client.get("/api/gallery", params={"views_max": 0})
-    assert views.json()["total"] == 2
+    views = await client.get("/api/gallery", params={"views_max": 100})
+    assert views.status_code == 200
+    assert [item["pid"] for item in views.json()["items"]] == [10]
 
 
 async def test_gallery_empty_tag_is_ignored(client):
