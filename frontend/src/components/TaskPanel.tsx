@@ -4,7 +4,7 @@ import { useCancelTask } from "../api/mutations";
 import { useTasks } from "../api/queries";
 import { useEventStream } from "../api/sse";
 import type { TaskOut } from "../api/types";
-import { formatDateTime } from "../lib/format";
+import { formatBytes, formatDateTime } from "../lib/format";
 
 function statusStyle(status: string): string {
   switch (status) {
@@ -25,6 +25,7 @@ const KIND_LABELS: Record<string, string> = {
   sync: "元数据同步",
   download: "图片下载",
   export: "导出",
+  maintenance: "维护",
 };
 
 function detailSummary(task: TaskOut): string {
@@ -37,6 +38,12 @@ function detailSummary(task: TaskOut): string {
   }
   if (task.kind === "export") {
     return `作品 ${detail.pids ?? 0} · 文件 ${detail.files ?? 0}`;
+  }
+  if (task.kind === "maintenance") {
+    if ("works" in detail) {
+      return `作品 ${detail.works ?? 0} · 共 ${formatBytes(Number(detail.total_bytes ?? 0))}`;
+    }
+    return `修正页 ${detail.pages_fixed ?? 0} · 作品 ${detail.works_fixed ?? 0}`;
   }
   return "";
 }
