@@ -158,6 +158,23 @@ class ExportRequest(BaseModel):
     pids: list[int] = Field(default_factory=list)
     x_restrict: int | None = None
     only_downloaded: bool = False
+    group_by_author: bool = False
+    # filter-mode export (same fields as the gallery filters)
+    use_filter: bool = False
+    tags: list[str] = Field(default_factory=list)
+    author_ids: list[int] = Field(default_factory=list)
+    q: str | None = None
+    type: str | None = None
+    downloaded: bool | None = None
+    restrict: str | None = None
+    only_unbookmarked: bool = False
+    include_unbookmarked: bool = False
+    page_min: int | None = None
+    page_max: int | None = None
+    bookmarks_min: int | None = None
+    bookmarks_max: int | None = None
+    views_min: int | None = None
+    views_max: int | None = None
 
 
 class ExportOut(BaseModel):

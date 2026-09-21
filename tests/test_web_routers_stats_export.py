@@ -192,3 +192,86 @@ async def test_export_includes_deleted_works(client):
 async def test_export_download_404_for_unknown(client):
     response = await client.get("/api/export/nope/download")
     assert response.status_code == 404
+
+
+async def test_export_by_filter_excludes_deleted(client):
+    import io
+    import zipfile
+
+    from pixiv_archive.db.models import Illust
+
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        session.add(Illust(pid=40, title="gone", author_id=1, state="deleted"))
+        await session.commit()
+    async with database.session() as session:
+        session.add(Bookmark(pid=40, restrict="public", rank=4096, state="active"))
+        await session.commit()
+
+    response = await client.post(
+        "/api/export",
+        json={"include_metadata": True, "include_originals": False, "use_filter": True},
+    )
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    await client._transport.app.state.tasks.wait(task_id)  # type: ignore[union-attr]
+    download = await client.get(f"/api/export/{task_id}/download")
+    archive = zipfile.ZipFile(io.BytesIO(download.content))
+    names = archive.namelist()
+    assert "metadata/10.json" in names
+    assert "metadata/20.json" in names
+    assert "metadata/40.json" not in names
+
+
+async def test_export_by_filter_applies_downloaded_flag(client):
+    import io
+    import zipfile
+
+    response = await client.post(
+        "/api/export",
+        json={
+            "include_metadata": True,
+            "include_originals": False,
+            "use_filter": True,
+            "downloaded": True,
+        },
+    )
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    await client._transport.app.state.tasks.wait(task_id)  # type: ignore[union-attr]
+    download = await client.get(f"/api/export/{task_id}/download")
+    archive = zipfile.ZipFile(io.BytesIO(download.content))
+    names = archive.namelist()
+    assert "metadata/10.json" in names
+    assert "metadata/20.json" not in names
+
+
+async def test_export_by_filter_with_no_matches_is_422(client):
+    response = await client.post(
+        "/api/export",
+        json={"include_metadata": True, "use_filter": True, "q": "no-such-title"},
+    )
+    assert response.status_code == 422
+
+
+async def test_export_groups_by_author_when_requested(client):
+    import io
+    import zipfile
+
+    response = await client.post(
+        "/api/export",
+        json={
+            "include_metadata": True,
+            "include_originals": False,
+            "pids": [10, 20],
+            "group_by_author": True,
+        },
+    )
+    assert response.status_code == 202
+    task_id = response.json()["task_id"]
+    await client._transport.app.state.tasks.wait(task_id)  # type: ignore[union-attr]
+    download = await client.get(f"/api/export/{task_id}/download")
+    archive = zipfile.ZipFile(io.BytesIO(download.content))
+    names = archive.namelist()
+    assert "1/10.json" in names
+    assert "1/20.json" in names

@@ -31,9 +31,40 @@ def _export_dir(settings: Any) -> Path:
 
 
 async def _selected_pids(session: AsyncSession, payload: ExportRequest) -> list[int]:
-    stmt = select(Illust.pid).join(Bookmark, Bookmark.pid == Illust.pid).order_by(Bookmark.rank)
     if payload.pids:
+        stmt = select(Illust.pid).join(Bookmark, Bookmark.pid == Illust.pid).order_by(Bookmark.rank)
         stmt = stmt.where(Illust.pid.in_(payload.pids))
+        if payload.x_restrict is not None:
+            stmt = stmt.where(Illust.x_restrict == payload.x_restrict)
+        if payload.only_downloaded:
+            stmt = stmt.where(Illust.has_original.is_(True))
+        return list((await session.execute(stmt)).scalars().all())
+
+    if payload.use_filter:
+        from pixiv_archive.db.query import IllustFilters, build_filtered_pids
+
+        filters = IllustFilters(
+            tags=payload.tags,
+            author_ids=payload.author_ids,
+            q=payload.q,
+            type=payload.type,
+            x_restrict=payload.x_restrict,
+            downloaded=payload.downloaded,
+            restrict=payload.restrict,
+            only_unbookmarked=payload.only_unbookmarked,
+            include_unbookmarked=payload.include_unbookmarked,
+            page_min=payload.page_min,
+            page_max=payload.page_max,
+            bookmarks_min=payload.bookmarks_min,
+            bookmarks_max=payload.bookmarks_max,
+            views_min=payload.views_min,
+            views_max=payload.views_max,
+        )
+        if payload.only_downloaded and filters.downloaded is None:
+            filters.downloaded = True
+        return list((await session.execute(build_filtered_pids(filters))).scalars().all())
+
+    stmt = select(Illust.pid).join(Bookmark, Bookmark.pid == Illust.pid).order_by(Bookmark.rank)
     if payload.x_restrict is not None:
         stmt = stmt.where(Illust.x_restrict == payload.x_restrict)
     if payload.only_downloaded:
@@ -88,9 +119,13 @@ async def start_export(
                     if illust is None:
                         continue
                     author = await export_session.get(Author, illust.author_id)
+                    metadata_prefix = (
+                        f"{illust.author_id}/" if payload.group_by_author else "metadata/"
+                    )
+                    original_prefix = f"{illust.author_id}/" if payload.group_by_author else ""
                     if payload.include_metadata:
                         archive.writestr(
-                            f"metadata/{pid}.json",
+                            f"{metadata_prefix}{pid}.json",
                             json.dumps(
                                 _metadata_payload(illust, author, []),
                                 ensure_ascii=False,
@@ -114,7 +149,8 @@ async def start_export(
                             relative = f"{page.page_index:03d}_p{page.page_index}{page.ext}"
                             source = work_dir / "original" / relative
                             if source.is_file():
-                                archive.write(source, f"{pid:012d}/original/{relative}")
+                                target = f"{original_prefix}{pid:012d}/original/{relative}"
+                                archive.write(source, target)
                                 written += 1
         return {"filename": filename, "pids": len(pids), "files": written}
 
