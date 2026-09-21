@@ -42,9 +42,10 @@ async def gallery(
     rank_start: Annotated[int | None, Query(ge=0)] = None,
     rank_count: Annotated[int | None, Query(ge=1)] = None,
 ) -> GalleryResponse:
+    cleaned_tags = [name for name in (tag or []) if name]
     filters = IllustFilters(
         sort=sort,
-        tags=tag or [],
+        tags=cleaned_tags,
         author_ids=author_id or [],
         q=q,
         type=type,

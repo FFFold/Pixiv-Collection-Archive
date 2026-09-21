@@ -158,3 +158,62 @@ async def test_login_unavailable_without_token(client):
     client._transport.app.state.settings = type("S", (), {"auth_token": None})()  # type: ignore[union-attr]
     response = await client.post("/api/auth/login", json={"token": "x"})
     assert response.status_code == 503
+
+
+async def test_gallery_multi_tag_and_author_filters(client):
+    _login(client)
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    from pixiv_archive.db.models import IllustTag, Tag
+
+    async with database.session() as session:
+        cat = Tag(name="cat")
+        cute = Tag(name="cute")
+        session.add(cat)
+        session.add(cute)
+        await session.flush()
+        session.add(IllustTag(pid=10, tag_id=cat.id, position=0))
+        session.add(IllustTag(pid=10, tag_id=cute.id, position=1))
+        session.add(IllustTag(pid=20, tag_id=cat.id, position=0))
+        await session.commit()
+
+    both = await client.get("/api/gallery", params=[("tag", "cat"), ("tag", "cute")])
+    assert [item["pid"] for item in both.json()["items"]] == [10]
+
+    same_author = await client.get("/api/gallery", params=[("author_id", 1)])
+    assert same_author.json()["total"] == 2
+
+    other_author = await client.get("/api/gallery", params=[("author_id", 99)])
+    assert other_author.json()["total"] == 0
+
+
+async def test_gallery_range_filters(client):
+    _login(client)
+    pages = await client.get("/api/gallery", params={"page_min": 2})
+    assert [item["pid"] for item in pages.json()["items"]] == [10]
+
+    pages_none = await client.get("/api/gallery", params={"page_min": 5})
+    assert pages_none.json()["total"] == 0
+
+    books = await client.get("/api/gallery", params={"bookmarks_min": 1})
+    assert books.json()["total"] == 0
+
+    views = await client.get("/api/gallery", params={"views_max": 0})
+    assert views.json()["total"] == 2
+
+
+async def test_gallery_empty_tag_is_ignored(client):
+    """`?tag=` must behave like no tag filter (pre-refactor behavior)."""
+    _login(client)
+    response = await client.get("/api/gallery", params={"tag": ""})
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+
+
+async def test_gallery_limit_accepts_240(client):
+    _login(client)
+    response = await client.get("/api/gallery", params={"limit": 240})
+    assert response.status_code == 200
+    assert response.json()["limit"] == 240
+
+    too_large = await client.get("/api/gallery", params={"limit": 501})
+    assert too_large.status_code == 422
