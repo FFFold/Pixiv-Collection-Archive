@@ -11,7 +11,7 @@ from pixiv_archive.db.engine import Database
 from pixiv_archive.sync.factory import _ensure_schema
 from pixiv_archive.sync.scheduler import create_scheduler
 from pixiv_archive.web.auth import SessionSigner
-from pixiv_archive.web.routers import auth, export, gallery, illust, stats, tasks
+from pixiv_archive.web.routers import auth, export, gallery, illust, maintenance, stats, tasks
 from pixiv_archive.web.sse import EventBus
 from pixiv_archive.web.tasks import TaskManager
 
@@ -60,6 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tasks.router)
     app.include_router(stats.router)
     app.include_router(export.router)
+    app.include_router(maintenance.router)
 
     _mount_spa(app)
 

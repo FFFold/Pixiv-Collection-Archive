@@ -121,3 +121,38 @@ async def test_run_sync_propagates_failures(monkeypatch, tmp_path):
     )
     with pytest.raises(RuntimeError):
         await run_sync(["sync"], settings=settings)
+
+
+def test_build_parser_maintain_defaults():
+    args = build_parser().parse_args(["maintain", "db-check"])
+    assert args.command == "maintain"
+    assert args.action == "db-check"
+    assert args.yes is False
+
+
+def test_build_parser_maintain_rejects_unknown_action():
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["maintain", "nope"])
+
+
+async def test_run_maintain_rebuild_stats(monkeypatch, tmp_path, capsys):
+    from pixiv_archive.cli import run_maintain
+
+    settings = _settings(monkeypatch, tmp_path)
+
+    exit_code = await run_maintain(["maintain", "rebuild-stats"], settings=settings)
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "重建完成" in captured.out
+
+
+async def test_run_maintain_repair_requires_yes(monkeypatch, tmp_path, capsys):
+    from pixiv_archive.cli import run_maintain
+
+    settings = _settings(monkeypatch, tmp_path)
+
+    exit_code = await run_maintain(["maintain", "repair-download-state"], settings=settings)
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "预览" in captured.out
+    assert "--yes" in captured.out

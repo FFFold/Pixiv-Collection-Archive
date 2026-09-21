@@ -164,3 +164,8 @@ class ExportOut(BaseModel):
 class EventOut(BaseModel):
     type: str
     payload: dict[str, Any]
+
+
+class MaintenanceResultOut(BaseModel):
+    ok: bool
+    issues: list[dict[str, Any]] = Field(default_factory=list)

@@ -48,6 +48,18 @@ def build_parser() -> argparse.ArgumentParser:
     download.add_argument("--type", choices=("illust", "ugoira"), default=None)
     download.add_argument("--no-thumbs", action="store_true", help="skip thumbnail jobs")
     download.add_argument("--retry-failed", action="store_true", help="re-run failed jobs first")
+
+    maintain = subparsers.add_parser("maintain", help="reconcile DB with the works directory")
+    maintain.add_argument(
+        "action",
+        choices=("rebuild-stats", "repair-download-state", "db-check"),
+        help="maintenance operation",
+    )
+    maintain.add_argument(
+        "--yes",
+        action="store_true",
+        help="apply repair-download-state without prompting",
+    )
     return parser
 
 
@@ -100,6 +112,47 @@ async def run_download(argv: list[str], settings: Settings | None = None) -> int
     return 0 if report.status in ("completed", "completed_with_failures") else 1
 
 
+async def run_maintain(argv: list[str], settings: Settings | None = None) -> int:
+    from pixiv_archive.db.engine import Database
+    from pixiv_archive.maintenance.service import (
+        db_check,
+        preview_repair_download_state,
+        rebuild_storage_stats,
+        repair_download_state,
+    )
+    from pixiv_archive.sync.factory import _ensure_schema
+
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    settings = settings or Settings()
+    settings.ensure_dirs()
+
+    await _ensure_schema(settings)
+    db = Database(settings.db_path)
+    try:
+        async with db.session() as session:
+            if args.action == "rebuild-stats":
+                result = await rebuild_storage_stats(session, settings.works_dir)
+                print(f"重建完成：{result}")
+                return 0
+            if args.action == "db-check":
+                report = await db_check(session, settings.works_dir)
+                print("体检通过" if report["ok"] else f"发现 {len(report['issues'])} 类问题：")
+                for issue in report["issues"]:
+                    print(f"  - {issue['kind']}: {issue['count']} 例，样本 {issue['samples']}")
+                return 0
+            preview = await preview_repair_download_state(session, settings.works_dir)
+            print(f"预览：{preview}")
+            if not args.yes:
+                print("如需执行请加 --yes")
+                return 0
+            result = await repair_download_state(session, settings.works_dir)
+            print(f"修复完成：{result}")
+            return 0
+    finally:
+        await db.dispose()
+
+
 def _report_sync(result: SyncResult) -> None:
     print(
         f"[{result.kind}] {result.status}: "
@@ -137,8 +190,10 @@ def main(argv: list[str] | None = None) -> int:
 
         uvicorn.run(create_app(), host="0.0.0.0", port=8000)
         return 0
-    if argv[0] not in ("sync", "download"):
+    if argv[0] not in ("sync", "download", "maintain"):
         build_parser().error(f"unknown command: {argv[0]}")
     if argv[0] == "download":
         return asyncio.run(run_download(argv))
+    if argv[0] == "maintain":
+        return asyncio.run(run_maintain(argv))
     return asyncio.run(run_sync(argv))
