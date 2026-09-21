@@ -12,16 +12,24 @@ import type {
   TaskOut,
 } from "./types";
 
-const REPEATED_KEYS: Partial<Record<keyof GalleryQuery, string>> = {
+type ListKey = {
+  [K in keyof GalleryQuery]-?: NonNullable<GalleryQuery[K]> extends readonly unknown[]
+    ? K
+    : never;
+}[keyof GalleryQuery];
+
+export const GALLERY_LIST_PARAMS = {
   tags: "tag",
   author_ids: "author_id",
-};
+} as const satisfies Record<ListKey, string>;
 
 export function buildGalleryUrl(query: GalleryQuery): string {
   const params = new URLSearchParams();
-  Object.entries(query).forEach(([key, value]) => {
+  const entries = Object.entries(query) as [keyof GalleryQuery, unknown][];
+  entries.forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
-    const paramName = REPEATED_KEYS[key as keyof GalleryQuery] ?? key;
+    const paramName =
+      (GALLERY_LIST_PARAMS as Partial<Record<keyof GalleryQuery, string>>)[key] ?? key;
     if (Array.isArray(value)) {
       value.forEach((entry) => {
         if (entry === undefined || entry === null || entry === "") return;
