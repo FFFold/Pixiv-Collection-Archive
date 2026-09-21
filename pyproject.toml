@@ -60,3 +60,4 @@ markers = [
     "integration: tests that call the real pixiv API (requires PIXIV_REFRESH_TOKEN and network)",
 ]
 addopts = "-m 'not integration'"
+filterwarnings = ["error::sqlalchemy.exc.SADeprecationWarning"]
