@@ -701,8 +701,9 @@ async def test_scope_filter_honours_views_and_bookmarks_range(db):
 async def test_scope_filter_honours_restrict_and_unbookmarked(db):
     """Unbookmarked works are excluded from the default filter set.
 
-    ``only_unbookmarked`` + ``include_unbookmarked`` switches the bookmark
-    condition to ``unbookmarked``; unrelated works must disappear.
+    ``include_unbookmarked`` widens the bookmark condition; work 1 stays
+    excluded while the flag is absent, and appears once the bookmark state
+    condition is relaxed.
     """
     await _seed_illust(db, 1, rank=0, state="unbookmarked")
     await _seed_illust(db, 2, rank=10, state="active")
@@ -712,13 +713,20 @@ async def test_scope_filter_honours_restrict_and_unbookmarked(db):
         )
         await session.commit()
     async with db.session() as session:
-        private = await resolve_scope(session, DownloadScope(kind="filter", restrict="private"))
+        private_default = await resolve_scope(
+            session, DownloadScope(kind="filter", restrict="private")
+        )
+        private_widened = await resolve_scope(
+            session,
+            DownloadScope(kind="filter", restrict="private", include_unbookmarked=True),
+        )
         unbookmarked = await resolve_scope(
             session,
             DownloadScope(kind="filter", only_unbookmarked=True, include_unbookmarked=True),
         )
         default = await resolve_scope(session, DownloadScope(kind="filter", type="illust"))
-    assert private.pids == [1]
+    assert private_default.pids == []
+    assert private_widened.pids == [1]
     assert unbookmarked.pids == [1]
     assert default.pids == [2]
 ```
