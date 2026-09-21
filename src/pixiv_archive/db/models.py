@@ -39,6 +39,9 @@ class Illust(Base):
     state: Mapped[str] = mapped_column(String(16), default="active")
     has_original: Mapped[bool] = mapped_column(default=False)
     page_downloaded_count: Mapped[int] = mapped_column(default=0)
+    byte_size: Mapped[int] = mapped_column(BigInteger, default=0)
+    thumb_ready: Mapped[bool] = mapped_column(default=False)
+    animation_ready: Mapped[bool] = mapped_column(default=False)
     meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 

@@ -33,3 +33,29 @@ def _table_names(db_file) -> set[str]:
     finally:
         conn.close()
     return {r[0] for r in rows}
+
+
+def test_migration_adds_storage_stats_columns(tmp_path):
+    db_file = tmp_path / "archive.db"
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        capture_output=True,
+        text=True,
+        env={
+            "PATH": os.environ["PATH"],
+            "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+            "DATA_DIR": str(tmp_path),
+            "PIXIV_REFRESH_TOKEN": "tok",
+            "PIXIV_USER_ID": "1",
+        },
+    )
+    assert result.returncode == 0, result.stderr
+
+    import sqlite3
+
+    conn = sqlite3.connect(db_file)
+    try:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(illust)")}
+    finally:
+        conn.close()
+    assert {"byte_size", "thumb_ready", "animation_ready"} <= columns
