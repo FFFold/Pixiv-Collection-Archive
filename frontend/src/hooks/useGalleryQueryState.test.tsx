@@ -53,4 +53,32 @@ describe("useGalleryQueryState", () => {
     );
     expect(result.current.query.only_unbookmarked).toBe(true);
   });
+
+  it("releases the initial filter when it is explicitly cleared", () => {
+    const { result } = renderHook(
+      () => useGalleryQueryState({ only_unbookmarked: true }),
+      { wrapper: wrapperFor("/") },
+    );
+    act(() => result.current.patch({ only_unbookmarked: undefined, offset: 0 }));
+    expect(result.current.query.only_unbookmarked).toBeUndefined();
+  });
+
+  it("keeps the initial filter when an unrelated field is patched", () => {
+    const { result } = renderHook(
+      () => useGalleryQueryState({ only_unbookmarked: true }),
+      { wrapper: wrapperFor("/") },
+    );
+    act(() => result.current.patch({ sort: "views", offset: 0 }));
+    expect(result.current.query.only_unbookmarked).toBe(true);
+    expect(result.current.query.sort).toBe("views");
+  });
+
+  it("releases the initial filter on reset", () => {
+    const { result } = renderHook(
+      () => useGalleryQueryState({ only_unbookmarked: true }),
+      { wrapper: wrapperFor("/") },
+    );
+    act(() => result.current.reset());
+    expect(result.current.query.only_unbookmarked).toBeUndefined();
+  });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { GalleryQuery } from "../api/types";
@@ -80,11 +80,12 @@ export function useGalleryQueryState(
   initial: Partial<GalleryQuery> = {},
 ): UseGalleryQueryState {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [released, setReleased] = useState(false);
 
   const query = useMemo(() => {
     const parsed: GalleryQuery = { offset: 0, limit: PAGE_SIZE, sort: "rank" };
     SINGLE_KEYS.forEach((key) => {
-      if (key in initial) return;
+      if (!released && key in initial) return;
       const raw = searchParams.get(key);
       if (raw === null || raw === "") return;
       (parsed as Record<string, unknown>)[key] = parseSingle(key, raw);
@@ -99,13 +100,17 @@ export function useGalleryQueryState(
       }
       (parsed as Record<string, unknown>)[key] = raw;
     });
-    return { ...parsed, ...initial };
-  }, [searchParams, initial]);
+    return released ? parsed : { ...parsed, ...initial };
+  }, [searchParams, initial, released]);
 
   const patch = useCallback(
     (update: Partial<GalleryQuery>) => {
       const next = new URLSearchParams(searchParams);
+      let release = false;
       Object.entries(update).forEach(([key, value]) => {
+        if (!released && key in initial) {
+          release = true;
+        }
         if (key in GALLERY_LIST_PARAMS) {
           const paramName = GALLERY_LIST_PARAMS[key as ListKey];
           next.delete(paramName);
@@ -130,13 +135,19 @@ export function useGalleryQueryState(
         next.delete("offset");
       }
       setSearchParams(next, { replace: true });
+      if (release) {
+        setReleased(true);
+      }
     },
-    [searchParams, setSearchParams],
+    [searchParams, setSearchParams, initial, released],
   );
 
   const reset = useCallback(() => {
     setSearchParams(new URLSearchParams(), { replace: true });
-  }, [setSearchParams]);
+    if (!released && Object.keys(initial).length > 0) {
+      setReleased(true);
+    }
+  }, [setSearchParams, initial, released]);
 
   return { query, patch, reset };
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { GalleryQuery } from "../api/types";
 import { useSelection } from "../contexts/SelectionContext";
+import FilterPickers from "./FilterPickers";
 import {
   DOWNLOAD_OPTIONS,
   R18_OPTIONS,
@@ -258,6 +259,12 @@ export default function Toolbar({
           className="min-w-[180px] flex-1 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm outline-none focus:border-accent"
         />
       </div>
+
+      <FilterPickers
+        tags={query.tags ?? []}
+        authorIds={query.author_ids ?? []}
+        onChange={onChange}
+      />
 
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <button

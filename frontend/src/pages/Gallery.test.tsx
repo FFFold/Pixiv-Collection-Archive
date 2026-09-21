@@ -134,4 +134,16 @@ describe("Gallery", () => {
     await userEvent.selectOptions(screen.getByLabelText("状态"), "active");
     await waitFor(() => expect(screen.getByLabelText("状态")).toHaveValue("active"));
   });
+
+  it("clears the pinned unbookmarked filter via 清空筛选", async () => {
+    mockGallery();
+    render(<Gallery initialOnlyUnbookmarked />, { wrapper: wrapper() });
+    await waitFor(() => expect(screen.getByText("作品一")).toBeInTheDocument());
+    expect(screen.getByLabelText("状态")).toHaveValue("active");
+
+    await userEvent.click(screen.getByRole("button", { name: /清空筛选/ }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /清空筛选/ })).not.toBeInTheDocument(),
+    );
+  });
 });
