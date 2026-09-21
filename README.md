@@ -184,13 +184,13 @@ npm run build
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | POST | `/api/auth/login` | 用 `AUTH_TOKEN` 换取 session cookie |
-| GET | `/api/gallery` | 画廊（排序 / 过滤 / 搜索 / 分页，含显示序号） |
+| GET | `/api/gallery` | 画廊（排序 / 搜索 / 多标签 AND / 多作者 / 页数 / 收藏数 / 浏览数 / 状态 / 分页，含显示序号；`tag` 与 `author_id` 可重复） |
 | GET | `/api/illust/{pid}` | 作品详情（含页状态、标签、动图信息） |
 | GET | `/api/illust/{pid}/file/{page}` | 原图（支持 Range 与 ETag） |
 | GET | `/api/illust/{pid}/thumb` | 缩略图（本地 WebP 优先，回退预览图/占位） |
 | GET | `/api/illust/{pid}/animation` | ugoira 转码后的 mp4 |
 | POST | `/api/sync` | 触发阶段 A（`mode=incremental\|full`） |
-| POST | `/api/downloads` | 触发阶段 B（scope: all_missing/author/selected/rank-range/filter） |
+| POST | `/api/downloads` | 触发阶段 B（scope: all_missing/author/selected/rank-range/filter；filter 支持与画廊相同的筛选字段） |
 | GET | `/api/tasks` | 任务列表与状态（可取消） |
 | GET | `/api/events` | SSE 实时进度事件流 |
 | GET | `/api/stats` | 统计（数量 / 页状态 / 体积） |
