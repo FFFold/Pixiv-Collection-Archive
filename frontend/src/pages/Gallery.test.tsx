@@ -92,4 +92,46 @@ describe("Gallery", () => {
     await userEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByText(/下载选中 \(1\)/)).toBeInTheDocument();
   });
+
+  it("keeps the selection when navigating to another page", async () => {
+    const pageTwo = { ...ITEM, pid: 2, index: 2, title: "作品二" };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: RequestInfo | URL) => {
+        const url = String(input);
+        const onSecondPage = url.includes("offset=60");
+        const payload = url.includes("/api/gallery")
+          ? {
+              items: onSecondPage ? [pageTwo] : [ITEM],
+              total: 120,
+              offset: onSecondPage ? 60 : 0,
+              limit: 60,
+            }
+          : { task_id: "t", filename: "f" };
+        return Promise.resolve(
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }),
+    );
+    render(<Gallery />, { wrapper: wrapper() });
+    await waitFor(() => expect(screen.getByText("作品一")).toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "全选本页" }));
+    expect(screen.getByText(/下载选中 \(1\)/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await waitFor(() => expect(screen.getByText("作品二")).toBeInTheDocument());
+    expect(screen.getByText(/下载选中 \(1\)/)).toBeInTheDocument();
+  });
+
+  it("clears the deleted-state filter when switching back to 仅正常", async () => {
+    mockGallery();
+    render(<Gallery />, { wrapper: wrapper("/?only_deleted=true") });
+    await waitFor(() => expect(screen.getByLabelText("状态")).toHaveValue("deleted"));
+
+    await userEvent.selectOptions(screen.getByLabelText("状态"), "active");
+    await waitFor(() => expect(screen.getByLabelText("状态")).toHaveValue("active"));
+  });
 });

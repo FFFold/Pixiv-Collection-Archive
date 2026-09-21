@@ -56,6 +56,10 @@ describe("Toolbar 状态筛选", () => {
       </SelectionProvider>,
     );
     await userEvent.selectOptions(screen.getByLabelText("状态"), "active");
-    expect(onChange).toHaveBeenCalledWith({ offset: 0 });
+    expect(onChange).toHaveBeenCalledWith({
+      only_deleted: undefined,
+      include_deleted: undefined,
+      offset: 0,
+    });
   });
 });

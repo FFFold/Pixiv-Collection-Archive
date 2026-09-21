@@ -127,8 +127,10 @@ export default function Toolbar({
     query.views_min ?? query.views_max,
     query.only_unbookmarked,
     query.only_deleted || query.include_deleted,
-  ].filter((value) => value !== undefined && value !== null && value !== false && value !== "")
-    .length;
+  ].filter(
+    (value) =>
+      value !== undefined && value !== null && value !== false && value !== "" && value !== 0,
+  ).length;
 
   return (
     <div className="sticky top-0 z-20 space-y-2 border-b border-border-subtle bg-surface/95 px-4 py-3 backdrop-blur">
@@ -184,18 +186,13 @@ export default function Toolbar({
           ariaLabel="状态"
           value={query.only_deleted ? "deleted" : query.include_deleted ? "all" : "active"}
           options={STATUS_OPTIONS}
-          onChange={(value) => {
-            const patch: Partial<GalleryQuery> = {
+          onChange={(value) =>
+            onChange({
               only_deleted: value === "deleted" ? true : undefined,
               include_deleted: value === "all" ? true : undefined,
               offset: 0,
-            };
-            if (value === "active") {
-              delete patch.only_deleted;
-              delete patch.include_deleted;
-            }
-            onChange(patch);
-          }}
+            })
+          }
         />
         <Select
           ariaLabel="页数预设"
