@@ -29,6 +29,20 @@ export default function GalleryCard({ item, selected, onToggle }: Props) {
           src={item.thumb_url}
           alt={item.title}
           loading="lazy"
+          data-fallback="false"
+          onError={(event) => {
+            const image = event.currentTarget;
+            if (image.dataset.fallback === "true") return;
+            image.dataset.fallback = "true";
+            image.src =
+              "data:image/svg+xml;utf8," +
+              encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400">' +
+                  '<rect width="100%" height="100%" fill="#1d2531"/>' +
+                  '<text x="50%" y="50%" fill="#9aa4b2" font-family="sans-serif" ' +
+                  'font-size="16" text-anchor="middle">图片不可用</text></svg>',
+              );
+          }}
           className="w-full bg-surface object-cover transition-opacity group-hover:opacity-90"
         />
       </Link>

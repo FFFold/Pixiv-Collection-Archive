@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useStartDownload } from "../api/mutations";
 import { useIllust } from "../api/queries";
 import Lightbox from "../components/Lightbox";
+import { useSelection } from "../contexts/SelectionContext";
 import { formatDate, formatIndex } from "../lib/format";
 
 export default function IllustDetail() {
@@ -12,6 +13,7 @@ export default function IllustDetail() {
   const navigate = useNavigate();
   const { data, isLoading, isError } = useIllust(pid);
   const download = useStartDownload();
+  const selection = useSelection();
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -31,6 +33,7 @@ export default function IllustDetail() {
 
   const missingPages = data.page_count - data.page_downloaded_count;
   const viewerAvailable = data.page_downloaded_count > 0 || data.animation_available;
+  const isSelected = selection.selected.has(data.pid);
 
   const requestDownload = () => {
     download.mutate(
@@ -67,7 +70,7 @@ export default function IllustDetail() {
           <h1 className="text-lg font-semibold leading-snug">{data.title}</h1>
           <p className="mt-1 text-sm text-text-muted">
             <Link
-              to={`/?author=${data.author_id}`}
+              to={`/?author_id=${data.author_id}`}
               className="hover:text-text-primary"
             >
               {data.author_name}
@@ -129,6 +132,13 @@ export default function IllustDetail() {
         ) : null}
 
         <div className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => selection.toggle(data.pid)}
+            className="rounded-md border border-border-subtle px-3 py-2 text-sm hover:border-accent"
+          >
+            {isSelected ? "移出选择" : "加入选择"}
+          </button>
           {missingPages > 0 ? (
             <button
               type="button"

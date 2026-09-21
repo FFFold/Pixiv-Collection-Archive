@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -61,5 +61,13 @@ describe("GalleryCard", () => {
     renderCard({ ...ITEM, has_original: true, page_downloaded_count: 3 });
     expect(screen.queryByText("未下载")).not.toBeInTheDocument();
     expect(screen.getByText("已下载")).toBeInTheDocument();
+  });
+
+  it("falls back to an inline placeholder when the thumbnail fails", () => {
+    renderCard(ITEM);
+    const image = screen.getByRole("img");
+    fireEvent.error(image);
+    expect(image.dataset.fallback).toBe("true");
+    expect(image).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
   });
 });
