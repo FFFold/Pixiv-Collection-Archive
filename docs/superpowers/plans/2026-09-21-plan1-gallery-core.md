@@ -59,6 +59,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import select
 
 from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import Author, Bookmark, Illust, IllustTag, Tag
@@ -353,7 +354,6 @@ def _apply_filters(stmt: Select[Any], filters: IllustFilters) -> Select[Any]:
             window = window.limit(filters.rank_count)
         stmt = stmt.where(Illust.pid.in_(window))
     return stmt
-```
 ```
 
 - [ ] **Step 4: 运行测试确认通过**
