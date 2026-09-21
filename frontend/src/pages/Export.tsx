@@ -2,33 +2,71 @@ import { useState } from "react";
 
 import { useStartExport } from "../api/mutations";
 import { useStats } from "../api/queries";
+import type { ExportRequest, GalleryQuery } from "../api/types";
+import { useGalleryFilters } from "../contexts/GalleryFiltersContext";
+import { useSelection } from "../contexts/SelectionContext";
+
+type Scope = "all" | "filter" | "selected";
+
+const FILTER_KEYS: (keyof GalleryQuery)[] = [
+  "tags",
+  "author_ids",
+  "q",
+  "type",
+  "downloaded",
+  "restrict",
+  "only_unbookmarked",
+  "include_unbookmarked",
+  "page_min",
+  "page_max",
+  "bookmarks_min",
+  "bookmarks_max",
+  "views_min",
+  "views_max",
+];
 
 export default function Export() {
   const stats = useStats();
   const start = useStartExport();
+  const { filters } = useGalleryFilters();
+  const selection = useSelection();
+  const [scope, setScope] = useState<Scope>("all");
   const [includeOriginals, setIncludeOriginals] = useState(false);
   const [includeMetadata, setIncludeMetadata] = useState(true);
   const [onlyDownloaded, setOnlyDownloaded] = useState(true);
   const [r18, setR18] = useState<"" | "0" | "1">("");
+  const [groupByAuthor, setGroupByAuthor] = useState(false);
   const [filename, setFilename] = useState<string | null>(null);
   const [taskId, setTaskId] = useState<string | null>(null);
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
-    start.mutate(
-      {
-        include_metadata: includeMetadata,
-        include_originals: includeOriginals,
-        only_downloaded: onlyDownloaded,
-        x_restrict: r18 === "" ? undefined : Number(r18),
+    const payload: ExportRequest = {
+      include_metadata: includeMetadata,
+      include_originals: includeOriginals,
+      only_downloaded: onlyDownloaded,
+      x_restrict: r18 === "" ? undefined : Number(r18),
+      group_by_author: groupByAuthor,
+    };
+    if (scope === "selected") {
+      payload.pids = Array.from(selection.selected);
+    } else if (scope === "filter") {
+      payload.use_filter = true;
+      FILTER_KEYS.forEach((key) => {
+        const value = filters[key];
+        if (value === undefined) return;
+        Object.assign(payload, { [key]: value });
+      });
+      if (payload.x_restrict === undefined && filters.x_restrict !== undefined) {
+        payload.x_restrict = filters.x_restrict;
+      }
+    }
+    start.mutate(payload, {
+      onSuccess: (response) => {
+        setFilename(response.filename);
+        setTaskId(response.task_id);
       },
-      {
-        onSuccess: (response) => {
-          setFilename(response.filename);
-          setTaskId(response.task_id);
-        },
-      },
-    );
+    });
   };
 
   return (
@@ -43,6 +81,41 @@ export default function Export() {
         onSubmit={submit}
         className="space-y-3 rounded-lg border border-border-subtle bg-surface-raised p-4"
       >
+        <fieldset className="space-y-2">
+          <legend className="text-sm text-text-muted">范围</legend>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="scope"
+              checked={scope === "all"}
+              onChange={() => setScope("all")}
+              className="accent-accent"
+            />
+            全部 / 条件
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="scope"
+              checked={scope === "filter"}
+              onChange={() => setScope("filter")}
+              className="accent-accent"
+            />
+            按当前筛选
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="radio"
+              name="scope"
+              checked={scope === "selected"}
+              disabled={selection.count === 0}
+              onChange={() => setScope("selected")}
+              className="accent-accent"
+            />
+            按选中 ({selection.count})
+          </label>
+        </fieldset>
+
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
@@ -69,6 +142,15 @@ export default function Export() {
             className="accent-accent"
           />
           仅包含已下载的作品
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={groupByAuthor}
+            onChange={(event) => setGroupByAuthor(event.target.checked)}
+            className="accent-accent"
+          />
+          按作者分组目录
         </label>
         <label className="flex items-center gap-2 text-sm">
           <span className="text-text-muted">分级</span>
