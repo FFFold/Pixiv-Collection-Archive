@@ -4,7 +4,8 @@ import pytest
 
 from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import Author, Bookmark, Illust, IllustTag, Tag
-from pixiv_archive.web.gallery_query import GalleryFilters, query_gallery
+from pixiv_archive.db.query import IllustFilters
+from pixiv_archive.web.gallery_query import query_gallery
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ async def test_query_returns_items_in_rank_order_with_index(db):
     await _seed(db, 2, rank=0)
     await _seed(db, 3, rank=200)
     async with db.session() as session:
-        result = await query_gallery(session, GalleryFilters(), offset=0, limit=10)
+        result = await query_gallery(session, IllustFilters(), offset=0, limit=10)
     assert [item.pid for item in result.items] == [2, 1, 3]
     assert [item.index for item in result.items] == [1, 2, 3]
     assert result.total == 3
@@ -70,7 +71,7 @@ async def test_query_pagination_keeps_absolute_index(db):
     for i, pid in enumerate([10, 20, 30, 40, 50]):
         await _seed(db, pid, rank=i * 1024)
     async with db.session() as session:
-        page = await query_gallery(session, GalleryFilters(), offset=2, limit=2)
+        page = await query_gallery(session, IllustFilters(), offset=2, limit=2)
     assert [item.pid for item in page.items] == [30, 40]
     assert [item.index for item in page.items] == [3, 4]
 
@@ -79,13 +80,11 @@ async def test_query_sorts_by_create_date_and_bookmarks(db):
     await _seed(db, 1, rank=0)
     await _seed(db, 2, rank=10)
     async with db.session() as session:
-        newest = await query_gallery(
-            session, GalleryFilters(sort="create_date"), offset=0, limit=10
-        )
+        newest = await query_gallery(session, IllustFilters(sort="create_date"), offset=0, limit=10)
     assert newest.total == 2
 
     async with db.session() as session:
-        popular = await query_gallery(session, GalleryFilters(sort="bookmarks"), offset=0, limit=10)
+        popular = await query_gallery(session, IllustFilters(sort="bookmarks"), offset=0, limit=10)
     assert len(popular.items) == 2
 
 
@@ -94,7 +93,7 @@ async def test_query_filters_by_x_restrict_and_type(db):
     await _seed(db, 2, rank=10, x=1, type_="ugoira")
     async with db.session() as session:
         result = await query_gallery(
-            session, GalleryFilters(x_restrict=1, type="ugoira"), offset=0, limit=10
+            session, IllustFilters(x_restrict=1, type="ugoira"), offset=0, limit=10
         )
     assert [item.pid for item in result.items] == [2]
 
@@ -104,9 +103,9 @@ async def test_query_filters_download_state(db):
     await _seed(db, 2, rank=10, has_original=False)
     async with db.session() as session:
         downloaded = await query_gallery(
-            session, GalleryFilters(downloaded=True), offset=0, limit=10
+            session, IllustFilters(downloaded=True), offset=0, limit=10
         )
-        pending = await query_gallery(session, GalleryFilters(downloaded=False), offset=0, limit=10)
+        pending = await query_gallery(session, IllustFilters(downloaded=False), offset=0, limit=10)
     assert [item.pid for item in downloaded.items] == [1]
     assert [item.pid for item in pending.items] == [2]
 
@@ -115,8 +114,8 @@ async def test_query_filters_by_author_and_tag(db):
     await _seed(db, 1, rank=0, author=5, tags=("猫",))
     await _seed(db, 2, rank=10, author=6, tags=("犬",))
     async with db.session() as session:
-        by_author = await query_gallery(session, GalleryFilters(author_id=5), offset=0, limit=10)
-        by_tag = await query_gallery(session, GalleryFilters(tag="犬-2"), offset=0, limit=10)
+        by_author = await query_gallery(session, IllustFilters(author_ids=[5]), offset=0, limit=10)
+        by_tag = await query_gallery(session, IllustFilters(tags=["犬-2"]), offset=0, limit=10)
     assert [item.pid for item in by_author.items] == [1]
     assert [item.pid for item in by_tag.items] == [2]
 
@@ -124,8 +123,8 @@ async def test_query_filters_by_author_and_tag(db):
 async def test_query_search_matches_title_and_author_name(db):
     await _seed(db, 777, rank=0)
     async with db.session() as session:
-        by_title = await query_gallery(session, GalleryFilters(q="777"), offset=0, limit=10)
-        by_author = await query_gallery(session, GalleryFilters(q="author1"), offset=0, limit=10)
+        by_title = await query_gallery(session, IllustFilters(q="777"), offset=0, limit=10)
+        by_author = await query_gallery(session, IllustFilters(q="author1"), offset=0, limit=10)
     assert [item.pid for item in by_title.items] == [777]
     assert [item.pid for item in by_author.items] == [777]
 
@@ -134,10 +133,10 @@ async def test_query_unbookmarked_scope(db):
     await _seed(db, 1, rank=0, bm_state="unbookmarked")
     await _seed(db, 2, rank=10)
     async with db.session() as session:
-        default = await query_gallery(session, GalleryFilters(), offset=0, limit=10)
+        default = await query_gallery(session, IllustFilters(), offset=0, limit=10)
         unbookmarked = await query_gallery(
             session,
-            GalleryFilters(include_unbookmarked=True, only_unbookmarked=True),
+            IllustFilters(include_unbookmarked=True, only_unbookmarked=True),
             offset=0,
             limit=10,
         )
@@ -149,7 +148,7 @@ async def test_query_excludes_deleted_illusts(db):
     await _seed(db, 1, rank=0, state="deleted")
     await _seed(db, 2, rank=10)
     async with db.session() as session:
-        result = await query_gallery(session, GalleryFilters(), offset=0, limit=10)
+        result = await query_gallery(session, IllustFilters(), offset=0, limit=10)
     assert [item.pid for item in result.items] == [2]
 
 
@@ -158,7 +157,7 @@ async def test_query_rank_range(db):
         await _seed(db, pid, rank=i * 1024)
     async with db.session() as session:
         result = await query_gallery(
-            session, GalleryFilters(rank_start=1, rank_count=1), offset=0, limit=10
+            session, IllustFilters(rank_start=1, rank_count=1), offset=0, limit=10
         )
     assert [item.pid for item in result.items] == [20]
 
@@ -167,7 +166,7 @@ async def test_query_only_deleted_returns_stubs(db):
     await _seed(db, 1, rank=0)
     await _seed(db, 2, rank=10, state="deleted")
     async with db.session() as session:
-        result = await query_gallery(session, GalleryFilters(only_deleted=True), offset=0, limit=10)
+        result = await query_gallery(session, IllustFilters(only_deleted=True), offset=0, limit=10)
     assert [item.pid for item in result.items] == [2]
     assert result.items[0].state == "deleted"
 
@@ -177,7 +176,7 @@ async def test_query_include_deleted_returns_everything(db):
     await _seed(db, 2, rank=10, state="deleted")
     async with db.session() as session:
         result = await query_gallery(
-            session, GalleryFilters(include_deleted=True), offset=0, limit=10
+            session, IllustFilters(include_deleted=True), offset=0, limit=10
         )
     assert [item.pid for item in result.items] == [1, 2]
 
@@ -185,5 +184,5 @@ async def test_query_include_deleted_returns_everything(db):
 async def test_query_item_exposes_active_state(db):
     await _seed(db, 1, rank=0)
     async with db.session() as session:
-        result = await query_gallery(session, GalleryFilters(), offset=0, limit=10)
+        result = await query_gallery(session, IllustFilters(), offset=0, limit=10)
     assert result.items[0].state == "active"
