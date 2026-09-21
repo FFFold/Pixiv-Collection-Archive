@@ -146,6 +146,10 @@ class StatsOut(BaseModel):
     animation_ready: int
     by_type: dict[str, int]
     by_restrict: dict[str, int]
+    by_type_bytes: dict[str, int]
+    by_restrict_bytes: dict[str, int]
+    top_authors_bytes: list[dict[str, Any]]
+    stats_stale: bool
 
 
 class ExportRequest(BaseModel):

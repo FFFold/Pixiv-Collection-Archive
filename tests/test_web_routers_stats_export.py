@@ -86,8 +86,31 @@ async def test_stats_endpoint(client):
     assert payload["by_type"] == {"ugoira": 1, "illust": 1}
     assert payload["by_restrict"] == {"public": 1, "private": 1}
     assert payload["ugoira_count"] == 1
+    assert payload["animation_ready"] == 0
+    assert payload["total_bytes"] == 0
+    assert payload["stats_stale"] is True
+    assert payload["by_type_bytes"] == {"ugoira": 0, "illust": 0}
+
+
+async def test_stats_reflects_rebuilt_columns(client):
+
+    from pixiv_archive.db.models import Illust
+
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 10)
+            .values(byte_size=1234, thumb_ready=True, animation_ready=True)
+        )
+        await session.commit()
+
+    response = await client.get("/api/stats")
+    payload = response.json()
+    assert payload["total_bytes"] == 1234
+    assert payload["thumbs_ready"] == 1
     assert payload["animation_ready"] == 1
-    assert payload["total_bytes"] > 0
+    assert payload["stats_stale"] is False
 
 
 async def test_export_metadata_zip(client):
