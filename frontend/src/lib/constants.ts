@@ -1,5 +1,7 @@
 export const PAGE_SIZE = 60;
 
+export const PAGE_SIZE_OPTIONS = [60, 120, 240] as const;
+
 export const SORT_OPTIONS = [
   { value: "rank", label: "收藏顺序" },
   { value: "create_date", label: "发布时间" },

@@ -27,4 +27,42 @@ describe("Pagination", () => {
     render(<Pagination offset={180} limit={60} total={200} onChange={() => undefined} />);
     expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
   });
+
+  it("offers page size options and reports a change", async () => {
+    const onLimitChange = vi.fn();
+    render(
+      <Pagination
+        offset={0}
+        limit={60}
+        total={200}
+        onChange={() => undefined}
+        onLimitChange={onLimitChange}
+      />,
+    );
+    await userEvent.selectOptions(screen.getByLabelText("每页数量"), "240");
+    expect(onLimitChange).toHaveBeenCalledWith(240);
+  });
+
+  it("jumps to a page number", async () => {
+    const onChange = vi.fn();
+    render(<Pagination offset={0} limit={60} total={600} onChange={onChange} />);
+    const input = screen.getByLabelText("页码");
+    await userEvent.clear(input);
+    await userEvent.type(input, "5{Enter}");
+    expect(onChange).toHaveBeenCalledWith(240);
+  });
+
+  it("jumps to the last page", async () => {
+    const onChange = vi.fn();
+    render(<Pagination offset={0} limit={60} total={130} onChange={onChange} />);
+    await userEvent.click(screen.getByRole("button", { name: "末页" }));
+    expect(onChange).toHaveBeenCalledWith(120);
+  });
+
+  it("changes pages with arrow keys", async () => {
+    const onChange = vi.fn();
+    render(<Pagination offset={60} limit={60} total={200} onChange={onChange} />);
+    await userEvent.keyboard("{ArrowRight}");
+    expect(onChange).toHaveBeenCalledWith(120);
+  });
 });
