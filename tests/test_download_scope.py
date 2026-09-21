@@ -1,7 +1,9 @@
+import dataclasses
+
 import pytest
 
 from pixiv_archive.db.engine import Database
-from pixiv_archive.db.models import Author, Bookmark, Illust, IllustPage, UgoiraMeta
+from pixiv_archive.db.models import Author, Bookmark, Illust, IllustPage, IllustTag, Tag, UgoiraMeta
 from pixiv_archive.db.repo import bookmarks
 from pixiv_archive.download.scope import (
     DownloadScope,
@@ -9,6 +11,7 @@ from pixiv_archive.download.scope import (
     empty_scope_matches_nothing,
     resolve_scope,
 )
+from pixiv_archive.web.schemas import DownloadRequest
 
 
 @pytest.fixture
@@ -200,20 +203,25 @@ async def test_scope_rank_range_without_count_takes_all_after_start(db):
 async def test_scope_filter_honours_page_and_tag_filters(db):
     await _seed_illust(db, 10, rank=0, page_count=1)
     await _seed_illust(db, 20, rank=10, page_count=6)
+    await _seed_illust(db, 30, rank=20, page_count=2)
     async with db.session() as session:
-        from pixiv_archive.db.models import IllustTag, Tag
-
         tag = Tag(name="cat")
         session.add(tag)
         await session.flush()
         session.add(IllustTag(pid=20, tag_id=tag.id, position=0))
         await session.commit()
     async with db.session() as session:
-        by_pages = await resolve_scope(
-            session, DownloadScope(kind="filter", page_min=2, page_max=10)
+        by_min = await resolve_scope(session, DownloadScope(kind="filter", page_min=2))
+        by_max = await resolve_scope(session, DownloadScope(kind="filter", page_max=1))
+        in_range = await resolve_scope(
+            session, DownloadScope(kind="filter", page_min=2, page_max=2)
         )
         by_tag = await resolve_scope(session, DownloadScope(kind="filter", tags=["cat"]))
-    assert by_pages.pids == [20]
+    assert by_min.pids == [20, 30]
+    assert by_max.pids == [10]
+    # in_range drops pid 20 via page_max and pid 10 via page_min, so both
+    # bounds are load-bearing.
+    assert in_range.pids == [30]
     assert by_tag.pids == [20]
 
 
@@ -261,10 +269,16 @@ async def test_scope_filter_honours_restrict_and_unbookmarked(db):
         )
         unbookmarked = await resolve_scope(
             session,
-            DownloadScope(kind="filter", only_unbookmarked=True, include_unbookmarked=True),
+            DownloadScope(kind="filter", only_unbookmarked=True),
         )
         default = await resolve_scope(session, DownloadScope(kind="filter", type="illust"))
     assert private_default.pids == []
     assert private_widened.pids == [1]
     assert unbookmarked.pids == [1]
     assert default.pids == [2]
+
+
+def test_download_request_fields_match_scope_fields():
+    request_fields = set(DownloadRequest.model_fields) - {"scope", "with_thumbs"}
+    scope_fields = {f.name for f in dataclasses.fields(DownloadScope)} - {"kind"}
+    assert request_fields == scope_fields
