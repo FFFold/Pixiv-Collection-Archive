@@ -42,6 +42,32 @@ describe("useGallery", () => {
     expect(url).toContain("limit=10");
     expect(url).toContain("sort=rank");
   });
+
+  it("serializes repeated tags and author ids", async () => {
+    const fetchMock = mockJson({ items: [], total: 0, offset: 0, limit: 60 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(
+      () =>
+        useGallery({
+          limit: 60,
+          tags: ["cat", "cute"],
+          author_ids: [1, 2],
+          page_min: 2,
+          page_max: 5,
+        }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("tag=cat");
+    expect(url).toContain("tag=cute");
+    expect(url).toContain("author_id=1");
+    expect(url).toContain("author_id=2");
+    expect(url).toContain("page_min=2");
+    expect(url).toContain("page_max=5");
+  });
 });
 
 describe("useMe", () => {

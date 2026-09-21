@@ -116,8 +116,8 @@ export interface GalleryQuery {
   offset?: number;
   limit?: number;
   sort?: "rank" | "create_date" | "bookmarks" | "views";
-  author_id?: number;
-  tag?: string;
+  author_ids?: number[];
+  tags?: string[];
   q?: string;
   type?: "illust" | "ugoira";
   x_restrict?: number;
@@ -127,6 +127,12 @@ export interface GalleryQuery {
   include_unbookmarked?: boolean;
   only_deleted?: boolean;
   include_deleted?: boolean;
+  page_min?: number;
+  page_max?: number;
+  bookmarks_min?: number;
+  bookmarks_max?: number;
+  views_min?: number;
+  views_max?: number;
   rank_start?: number;
   rank_count?: number;
 }
@@ -140,6 +146,19 @@ export interface DownloadRequest {
   x_restrict?: number;
   type?: "illust" | "ugoira";
   with_thumbs?: boolean;
+  tags?: string[];
+  author_ids?: number[];
+  q?: string;
+  restrict?: "public" | "private";
+  downloaded?: boolean;
+  page_min?: number;
+  page_max?: number;
+  bookmarks_min?: number;
+  bookmarks_max?: number;
+  views_min?: number;
+  views_max?: number;
+  only_unbookmarked?: boolean;
+  include_unbookmarked?: boolean;
 }
 
 export interface ExportRequest {

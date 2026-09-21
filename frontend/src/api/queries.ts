@@ -12,11 +12,24 @@ import type {
   TaskOut,
 } from "./types";
 
+const REPEATED_KEYS: Partial<Record<keyof GalleryQuery, string>> = {
+  tags: "tag",
+  author_ids: "author_id",
+};
+
 export function buildGalleryUrl(query: GalleryQuery): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
     if (value === undefined || value === null || value === "") return;
-    params.set(key, String(value));
+    const paramName = REPEATED_KEYS[key as keyof GalleryQuery] ?? key;
+    if (Array.isArray(value)) {
+      value.forEach((entry) => {
+        if (entry === undefined || entry === null || entry === "") return;
+        params.append(paramName, String(entry));
+      });
+      return;
+    }
+    params.set(paramName, String(value));
   });
   const suffix = params.toString();
   return suffix ? `/api/gallery?${suffix}` : "/api/gallery";
