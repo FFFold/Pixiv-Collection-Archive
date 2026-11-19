@@ -102,7 +102,7 @@ def transcode_to_mp4(
         "0",
         "-i",
         str(concat_path),
-        "-vsync",
+        "-fps_mode",
         "vfr",
         "-pix_fmt",
         "yuv420p",
