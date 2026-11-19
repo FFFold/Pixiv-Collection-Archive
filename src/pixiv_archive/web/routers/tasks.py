@@ -88,6 +88,7 @@ async def start_sync(
                 "pages_fetched": result.pages_fetched,
                 "previews_fetched": result.previews_fetched,
                 "previews_failed": result.previews_failed,
+                "previews_pending": result.previews_pending,
                 "failed_count": result.failed_count,
             }
 

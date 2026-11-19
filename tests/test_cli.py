@@ -156,3 +156,11 @@ async def test_run_maintain_repair_requires_yes(monkeypatch, tmp_path, capsys):
     assert exit_code == 0
     assert "预览" in captured.out
     assert "--yes" in captured.out
+
+
+def test_report_sync_includes_pending_previews(capsys):
+    from pixiv_archive.cli import _report_sync
+    from pixiv_archive.sync.orchestrator import SyncResult
+
+    _report_sync(SyncResult(run_id=1, kind="incremental", previews_pending=3))
+    assert "待补 3" in capsys.readouterr().out

@@ -161,6 +161,7 @@ def _report_sync(result: SyncResult) -> None:
         f"rank 修正 {result.rank_rebuilt_count}，"
         f"页数 {result.pages_fetched}，"
         f"预览图 {result.previews_fetched}（失败 {result.previews_failed}），"
+        f"待补 {result.previews_pending}，"
         f"ugoira {result.ugoira_meta_fetched}，"
         f"其它失败 {result.failed_count}"
     )
