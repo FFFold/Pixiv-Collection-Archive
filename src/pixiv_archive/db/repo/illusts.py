@@ -1,9 +1,10 @@
 import os
 from urllib.parse import urlsplit
 
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import CursorResult, case, delete, func, or_, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from pixiv_archive.db.models import (
     Author,
@@ -50,12 +51,13 @@ async def upsert_illust(
         "total_bookmarks": illust.total_bookmarks,
         "state": "active",
         "meta_json": meta_json,
+        "preview_state": "pending",
         "updated_at": utcnow(),
     }
     stmt = insert(Illust).values(**values)
     stmt = stmt.on_conflict_do_update(
         index_elements=[Illust.pid],
-        set_={key: value for key, value in values.items() if key != "pid"},
+        set_={key: value for key, value in values.items() if key not in ("pid", "preview_state")},
     )
     await session.execute(stmt)
     await _replace_tags(session, illust)
@@ -120,11 +122,185 @@ async def upsert_ugoira_meta(
     frame_count: int,
 ) -> None:
     stmt = insert(UgoiraMeta).values(
-        pid=pid, zip_url=zip_url, frames_json=frames_json, frame_count=frame_count
+        pid=pid,
+        zip_url=zip_url,
+        frames_json=frames_json,
+        frame_count=frame_count,
+        meta_attempts=0,
+        meta_error=None,
     )
     stmt = stmt.on_conflict_do_update(
         index_elements=[UgoiraMeta.pid],
-        set_={"zip_url": zip_url, "frames_json": frames_json, "frame_count": frame_count},
+        set_={
+            "zip_url": zip_url,
+            "frames_json": frames_json,
+            "frame_count": frame_count,
+            "meta_attempts": 0,
+            "meta_error": None,
+        },
+    )
+    await session.execute(stmt)
+
+
+_PID_CHUNK = 500
+
+
+def _chunks(pids: list[int], size: int = _PID_CHUNK) -> list[list[int]]:
+    return [pids[index : index + size] for index in range(0, len(pids), size)]
+
+
+async def get_preview_backlog(session: AsyncSession, *, max_attempts: int) -> list[int]:
+    """Active illusts whose preview is not ready and still has retries left."""
+    rows = await session.execute(
+        select(Illust.pid)
+        .where(
+            Illust.state == "active",
+            Illust.preview_state != "ready",
+            Illust.preview_attempts < max_attempts,
+        )
+        .order_by(Illust.pid)
+    )
+    return [int(row[0]) for row in rows]
+
+
+async def get_meta_json_map(session: AsyncSession, pids: list[int]) -> dict[int, str | None]:
+    result: dict[int, str | None] = {}
+    for chunk in _chunks(pids):
+        rows = await session.execute(
+            select(Illust.pid, Illust.meta_json).where(Illust.pid.in_(chunk))
+        )
+        for pid, meta_json in rows:
+            result[int(pid)] = meta_json
+    return result
+
+
+async def mark_previews_ready(session: AsyncSession, pids: list[int]) -> int:
+    changed = 0
+    for chunk in _chunks(pids):
+        result = await session.execute(
+            update(Illust)
+            .where(Illust.pid.in_(chunk))
+            .values(preview_state="ready", preview_error=None)
+        )
+        assert isinstance(result, CursorResult)
+        changed += result.rowcount or 0
+    return changed
+
+
+async def mark_previews_pending(session: AsyncSession, pids: list[int]) -> int:
+    changed = 0
+    for chunk in _chunks(pids):
+        result = await session.execute(
+            update(Illust)
+            .where(Illust.pid.in_(chunk))
+            .values(preview_state="pending", preview_attempts=0, preview_error=None)
+        )
+        assert isinstance(result, CursorResult)
+        changed += result.rowcount or 0
+    return changed
+
+
+async def get_ready_preview_pids(session: AsyncSession) -> list[int]:
+    rows = await session.execute(
+        select(Illust.pid)
+        .where(Illust.state == "active", Illust.preview_state == "ready")
+        .order_by(Illust.pid)
+    )
+    return [int(row[0]) for row in rows]
+
+
+async def record_preview_failure(
+    session: AsyncSession, pid: int, *, error: str, max_attempts: int
+) -> None:
+    next_attempts = Illust.preview_attempts + 1
+    await session.execute(
+        update(Illust)
+        .where(Illust.pid == pid)
+        .values(
+            preview_attempts=next_attempts,
+            preview_error=error[:500],
+            preview_state=case((next_attempts >= max_attempts, "failed"), else_="pending"),
+        )
+    )
+
+
+async def count_previews_missing(session: AsyncSession) -> int:
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Illust)
+                .where(Illust.state == "active", Illust.preview_state != "ready")
+            )
+        ).scalar_one()
+    )
+
+
+async def reset_failed_previews(session: AsyncSession) -> int:
+    result = await session.execute(
+        update(Illust)
+        .where(Illust.preview_state == "failed")
+        .values(preview_state="pending", preview_attempts=0, preview_error=None)
+    )
+    assert isinstance(result, CursorResult)
+    return result.rowcount or 0
+
+
+def _ugoira_pending_condition() -> ColumnElement[bool]:
+    return or_(
+        UgoiraMeta.pid.is_(None),
+        UgoiraMeta.zip_url == "",
+        UgoiraMeta.frame_count == 0,
+    )
+
+
+async def get_ugoira_meta_backlog(session: AsyncSession, *, max_attempts: int) -> list[int]:
+    rows = await session.execute(
+        select(Illust.pid)
+        .outerjoin(UgoiraMeta, UgoiraMeta.pid == Illust.pid)
+        .where(
+            Illust.state == "active",
+            Illust.type == "ugoira",
+            _ugoira_pending_condition(),
+            func.coalesce(UgoiraMeta.meta_attempts, 0) < max_attempts,
+        )
+        .order_by(Illust.pid)
+    )
+    return [int(row[0]) for row in rows]
+
+
+async def count_ugoira_meta_missing(session: AsyncSession) -> int:
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Illust)
+                .outerjoin(UgoiraMeta, UgoiraMeta.pid == Illust.pid)
+                .where(
+                    Illust.state == "active",
+                    Illust.type == "ugoira",
+                    _ugoira_pending_condition(),
+                )
+            )
+        ).scalar_one()
+    )
+
+
+async def record_ugoira_meta_failure(session: AsyncSession, pid: int, *, error: str) -> None:
+    stmt = insert(UgoiraMeta).values(
+        pid=pid,
+        zip_url="",
+        frames_json="[]",
+        frame_count=0,
+        meta_attempts=1,
+        meta_error=error[:500],
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[UgoiraMeta.pid],
+        set_={
+            "meta_attempts": UgoiraMeta.meta_attempts + 1,
+            "meta_error": error[:500],
+        },
     )
     await session.execute(stmt)
 
