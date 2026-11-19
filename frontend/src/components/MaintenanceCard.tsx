@@ -1,9 +1,16 @@
-import { useDbCheck, usePreviewRepair, useRebuildStats, useRepairDownloadState } from "../api/mutations";
+import {
+  useDbCheck,
+  usePreviewRepair,
+  useRebuildStats,
+  useRepairDownloadState,
+  useRepairPreviews,
+} from "../api/mutations";
 
 export default function MaintenanceCard() {
   const rebuild = useRebuildStats();
   const preview = usePreviewRepair();
   const repair = useRepairDownloadState();
+  const previews = useRepairPreviews();
   const check = useDbCheck();
 
   return (
@@ -39,6 +46,14 @@ export default function MaintenanceCard() {
         </button>
         <button
           type="button"
+          onClick={() => previews.mutate()}
+          disabled={previews.isPending}
+          className="rounded-md border border-border-subtle px-3 py-1.5 disabled:opacity-50"
+        >
+          补拉缺失封面
+        </button>
+        <button
+          type="button"
           onClick={() => check.mutate()}
           disabled={check.isPending}
           className="rounded-md border border-border-subtle px-3 py-1.5 disabled:opacity-50"
@@ -69,7 +84,7 @@ export default function MaintenanceCard() {
         </div>
       ) : null}
 
-      {rebuild.isError || repair.isError || check.isError ? (
+      {rebuild.isError || repair.isError || previews.isError || check.isError ? (
         <div className="mt-3 text-xs text-red-400">操作失败，请查看任务页或服务日志。</div>
       ) : null}
     </div>

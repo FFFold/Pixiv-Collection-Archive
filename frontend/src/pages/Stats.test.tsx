@@ -14,7 +14,10 @@ const STATS = {
   pending_pages: 21639,
   total_bytes: 501_234_567,
   thumbs_ready: 24,
+  previews_ready: 2048,
+  previews_missing: 0,
   ugoira_count: 43,
+  ugoira_meta_missing: 0,
   animation_ready: 2,
   by_type: { illust: 2007, ugoira: 43 },
   by_restrict: { public: 2047, private: 3 },
@@ -83,6 +86,12 @@ describe("Stats", () => {
       "href",
       "/?downloaded=true",
     );
+  });
+
+  it("shows preview readiness", async () => {
+    mockStats({ previews_ready: 2048, previews_missing: 2 });
+    renderStats();
+    await waitFor(() => expect(screen.getByText("待补 2")).toBeInTheDocument());
   });
 
   it("prompts to rebuild stats when stale", async () => {

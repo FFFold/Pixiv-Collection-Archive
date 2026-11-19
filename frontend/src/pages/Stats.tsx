@@ -81,9 +81,22 @@ export default function Stats() {
         <Card label="占用空间" value={formatBytes(data.total_bytes)} />
         <Card label="缩略图" value={data.thumbs_ready.toLocaleString()} />
         <Card
+          label="封面就绪"
+          value={data.previews_ready.toLocaleString()}
+          hint={
+            data.previews_missing > 0
+              ? `待补 ${data.previews_missing.toLocaleString()}`
+              : "全部就绪"
+          }
+        />
+        <Card
           label="动图"
           value={data.ugoira_count.toLocaleString()}
-          hint={`已转码 ${data.animation_ready}`}
+          hint={
+            data.ugoira_meta_missing > 0
+              ? `已转码 ${data.animation_ready} · 元数据缺失 ${data.ugoira_meta_missing}`
+              : `已转码 ${data.animation_ready}`
+          }
         />
         <Card label="已取消收藏" value={data.unbookmarked.toLocaleString()} to="/unbookmarked" />
         <Card

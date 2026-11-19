@@ -97,7 +97,10 @@ export interface StatsOut {
   pending_pages: number;
   total_bytes: number;
   thumbs_ready: number;
+  previews_ready: number;
+  previews_missing: number;
   ugoira_count: number;
+  ugoira_meta_missing: number;
   animation_ready: number;
   by_type: Record<string, number>;
   by_restrict: Record<string, number>;
