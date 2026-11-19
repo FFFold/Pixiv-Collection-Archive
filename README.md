@@ -119,6 +119,17 @@ $env:DATA_DIR = ".\data"                        # 本地运行务必显式设置
 uv run python -m pixiv_archive                  # 启动 Web 服务 :8000
 ```
 
+> Web 服务通过 `Settings(_env_file=None)` 构造，**不读 `.env`**；只有 CLI 子命令（`sync` / `download` / `maintain`）会从当前目录读 `.env`。所以本地起服务要先导出变量，需要热重载时用 `--factory --reload`：
+
+```powershell
+$env:DATA_DIR = ".\data"
+$env:PIXIV_REFRESH_TOKEN = "<refresh_token>"
+$env:PIXIV_USER_ID = "<user_id>"
+$env:AUTH_TOKEN = "dev-local-token"             # 不设置时 /api/auth/login 返回 503
+$env:PIXIV_PROXY = "http://127.0.0.1:7897"      # 无法直连 pixiv 时需要
+uv run uvicorn pixiv_archive.web.app:create_app --factory --reload --port 8000
+```
+
 前端（Node 22，在 `frontend/` 下）：
 
 ```bash
