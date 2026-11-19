@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -12,8 +13,9 @@ from pixiv_archive.sync.factory import _ensure_schema
 from pixiv_archive.sync.scheduler import create_scheduler
 from pixiv_archive.web.auth import SessionSigner
 from pixiv_archive.web.routers import auth, export, gallery, illust, maintenance, stats, tasks
+from pixiv_archive.web.routers.tasks import sync_result_detail
 from pixiv_archive.web.sse import EventBus
-from pixiv_archive.web.tasks import TaskManager
+from pixiv_archive.web.tasks import TaskContext, TaskManager
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -89,24 +91,33 @@ def _mount_spa(app: FastAPI) -> None:
 
 
 def _make_incremental_job(app: FastAPI) -> Callable[[], Awaitable[None]]:
-    async def job() -> None:
-        from pixiv_archive.sync.factory import open_sync_service
-
-        if any(record.kind in ("sync", "maintenance") for record in app.state.tasks.list_active()):
-            return
-        async with open_sync_service(app.state.settings) as service:
-            await service.run_incremental()
-
-    return job
+    return _make_sync_job(app, full=False)
 
 
 def _make_full_job(app: FastAPI) -> Callable[[], Awaitable[None]]:
+    return _make_sync_job(app, full=True)
+
+
+def _make_sync_job(app: FastAPI, *, full: bool) -> Callable[[], Awaitable[None]]:
     async def job() -> None:
         from pixiv_archive.sync.factory import open_sync_service
 
-        if any(record.kind in ("sync", "maintenance") for record in app.state.tasks.list_active()):
+        tasks: TaskManager = app.state.tasks
+        if any(record.kind in ("sync", "maintenance") for record in tasks.list_active()):
             return
-        async with open_sync_service(app.state.settings) as service:
-            await service.run_full()
+
+        async def run(context: TaskContext) -> dict[str, Any]:
+            async with open_sync_service(app.state.settings) as service:
+                service._on_progress = context.progress
+                if full:
+                    result = await service.run_full()
+                else:
+                    result = await service.run_incremental()
+                return sync_result_detail(result)
+
+        try:
+            tasks.start("sync", run)
+        except RuntimeError:
+            return
 
     return job

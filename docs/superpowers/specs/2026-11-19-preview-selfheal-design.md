@@ -108,7 +108,7 @@ ugoira_meta:
 1. 查询 `state='active' and type='ugoira'` 且（无 `ugoira_meta` 行，或 `zip_url=''`）且 `coalesce(meta_attempts,0) < 5` 的作品。
 2. 成功：`upsert_ugoira_meta()` 写入 zip/frames，并把 `meta_attempts=0`、`meta_error=NULL`。
 3. 失败：`record_ugoira_meta_failure(pid, error)` 创建/更新一行（保留已有 zip_url），`meta_attempts+1`，达到上限后不再入队。
-4. `download/scope.py` 的 `ugoira_pids` 只选择 `zip_url != '' and frame_count > 0` 的行，避免为失败占位行生成注定失败的 zip/mp4 任务。
+4. `download/scope.py` 的 `ugoira_pids` 只选择 `zip_url != ''` 的行，避免为失败占位行生成注定失败的 zip/mp4 任务；`frame_count` 不参与就绪判定（仅用于转码）。
 
 ### 4.5 下载器可观测性
 

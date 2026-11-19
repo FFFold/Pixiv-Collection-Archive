@@ -74,3 +74,56 @@ async def test_lifespan_starts_and_stops_scheduler(settings):
         assert scheduler is not None
         jobs = {job.id for job in scheduler.get_jobs()}
         assert "sync-incremental" in jobs
+
+
+async def test_scheduled_sync_registers_task_and_skips_while_busy(settings, monkeypatch):
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    import pixiv_archive.sync.factory as sync_factory
+    from pixiv_archive.sync.orchestrator import SyncResult
+    from pixiv_archive.web.app import _make_incremental_job
+
+    release = asyncio.Event()
+
+    class FakeService:
+        async def run_incremental(self):
+            await release.wait()
+            return SyncResult(run_id=1, kind="incremental")
+
+        async def run_full(self):
+            return await self.run_incremental()
+
+    @asynccontextmanager
+    async def fake_open(_settings):
+        yield FakeService()
+
+    monkeypatch.setattr(sync_factory, "open_sync_service", fake_open)
+
+    app = create_app(settings)
+    tasks = app.state.tasks
+    job = _make_incremental_job(app)
+
+    await asyncio.wait_for(job(), timeout=1)
+    active = tasks.list_active()
+    assert [record.kind for record in active] == ["sync"]
+
+    await asyncio.wait_for(job(), timeout=1)
+    assert len(tasks.list_active()) == 1
+
+    sync_id = active[0].id
+    release.set()
+    await tasks.wait(sync_id)
+    assert tasks.list_active() == []
+
+    maint_release = asyncio.Event()
+
+    async def maint(_context):
+        await maint_release.wait()
+        return {}
+
+    maint_id = tasks.start("maintenance", maint)
+    await asyncio.wait_for(job(), timeout=1)
+    assert [record.kind for record in tasks.list_active()] == ["maintenance"]
+    maint_release.set()
+    await tasks.wait(maint_id)

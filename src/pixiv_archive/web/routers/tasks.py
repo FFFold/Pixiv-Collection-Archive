@@ -5,6 +5,7 @@ from fastapi.responses import StreamingResponse
 
 from pixiv_archive.download.scope import DownloadScope
 from pixiv_archive.sync.factory import open_download_worker, open_sync_service
+from pixiv_archive.sync.orchestrator import SyncResult
 from pixiv_archive.web.auth import require_auth
 from pixiv_archive.web.deps import get_events, get_tasks
 from pixiv_archive.web.schemas import DownloadRequest, SyncRequest, TaskOut
@@ -62,6 +63,21 @@ def _task_out(tasks: TaskManager, task_id: str) -> TaskOut:
     return TaskOut(**record.to_dict())
 
 
+def sync_result_detail(result: SyncResult) -> dict[str, Any]:
+    return {
+        "status": result.status,
+        "new_count": result.new_count,
+        "unbookmarked_count": result.unbookmarked_count,
+        "deleted_count": result.deleted_count,
+        "rank_rebuilt_count": result.rank_rebuilt_count,
+        "pages_fetched": result.pages_fetched,
+        "previews_fetched": result.previews_fetched,
+        "previews_failed": result.previews_failed,
+        "previews_pending": result.previews_pending,
+        "failed_count": result.failed_count,
+    }
+
+
 @router.post("/sync", status_code=status.HTTP_202_ACCEPTED, response_model=TaskOut)
 async def start_sync(
     payload: SyncRequest,
@@ -81,18 +97,7 @@ async def start_sync(
                 result = await service.run_full()
             else:
                 result = await service.run_incremental()
-            return {
-                "status": result.status,
-                "new_count": result.new_count,
-                "unbookmarked_count": result.unbookmarked_count,
-                "deleted_count": result.deleted_count,
-                "rank_rebuilt_count": result.rank_rebuilt_count,
-                "pages_fetched": result.pages_fetched,
-                "previews_fetched": result.previews_fetched,
-                "previews_failed": result.previews_failed,
-                "previews_pending": result.previews_pending,
-                "failed_count": result.failed_count,
-            }
+            return sync_result_detail(result)
 
     try:
         task_id = tasks.start("sync", run)
