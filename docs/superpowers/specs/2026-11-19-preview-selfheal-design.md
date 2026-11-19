@@ -112,8 +112,7 @@ ugoira_meta:
 
 ### 4.5 下载器可观测性
 
-- `ImageDownloader.on_error` 目前在 `media/downloader.py` 定义但从未调用（死代码）。改为在候选 URL 全部失败后调用一次，参数 `(url, reason)`。
-- `sync/factory.py` 传入 logger 回调（warning），使失败出现在容器日志里。
+- `ImageDownloader.on_error` 目前在 `media/downloader.py` 定义但从未调用（死代码）。改为在候选 URL 全部失败后调用一次，参数 `(url, reason)`；默认回调直接 `logger.warning`，失败因此进入容器日志（factory 无需额外传参）。
 
 ## 5. 对外接口
 
@@ -148,8 +147,7 @@ ugoira_meta:
 | `db/models.py` | Illust / UgoiraMeta 新列 |
 | `db/repo/illusts.py` | upsert 显式 pending、预览队列/状态/重置查询、ugoira 失败记录 |
 | `sync/orchestrator.py` | 移除 `preview_targets`/`ugoira_targets` 收集，新增统一补拉与 `repair_assets()` |
-| `sync/factory.py` | 传入 `on_error` 日志回调 |
-| `media/downloader.py` | 调用 `on_error` |
+| `media/downloader.py` | 失败原因回传并默认记 warning 日志 |
 | `download/scope.py` | ugoira 任务只针对就绪元数据 |
 | `web/routers/maintenance.py` | repair-previews 任务 |
 | `web/routers/stats.py`、`web/schemas.py` | 新统计字段 |

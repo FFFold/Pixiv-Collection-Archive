@@ -103,12 +103,22 @@ class FakeDownloader:
     ``fetch_to_file`` writes a real JPEG to the destination as well.
     """
 
-    def __init__(self, fail_urls: set[str] | None = None) -> None:
+    def __init__(
+        self,
+        fail_urls: set[str] | None = None,
+        *,
+        corrupt_urls: set[str] | None = None,
+        error_urls: set[str] | None = None,
+    ) -> None:
         self.urls: list[str] = []
         self.fail_urls = fail_urls or set()
+        self.corrupt_urls = corrupt_urls or set()
+        self.error_urls = error_urls or set()
 
     async def fetch_to_file(self, url: str, dest) -> bool:
         self.urls.append(url)
+        if url in self.error_urls:
+            raise RuntimeError("fake transport exploded")
         if url in self.fail_urls:
             return False
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -117,6 +127,10 @@ class FakeDownloader:
 
     async def fetch_bytes(self, url: str) -> bytes | None:
         self.urls.append(url)
+        if url in self.error_urls:
+            raise RuntimeError("fake transport exploded")
         if url in self.fail_urls:
             return None
+        if url in self.corrupt_urls:
+            return b"not-an-image"
         return _FAKE_IMAGE

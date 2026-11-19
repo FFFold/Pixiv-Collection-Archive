@@ -300,3 +300,32 @@ def test_preview_url_prefers_square_medium():
         '{"image_urls": {"medium": "https://i/medium.jpg"}}'
     ) == ("https://i/medium.jpg")
     assert MetadataSyncService._preview_url(None) is None
+
+
+async def test_invalid_preview_bytes_are_not_marked_ready(db, tmp_path):
+    url = "https://i.pximg.net/80_sq.jpg"
+    client = FakeClient({"public": [page([make_illust(80)], cursor=None)], "private": []})
+    result = await build_service(
+        db, tmp_path, client, FakeDownloader(corrupt_urls={url})
+    ).run_incremental()
+    assert result.previews_failed == 1
+    assert not WorksStorage(tmp_path / "works").preview_path(80).exists()
+    async with db.session() as session:
+        row = await session.get(Illust, 80)
+    assert row.preview_state == "pending"
+    assert row.preview_attempts == 1
+    assert "invalid" in (row.preview_error or "")
+
+
+async def test_one_failing_preview_does_not_abort_the_batch(db, tmp_path):
+    worst = "https://i.pximg.net/81_sq.jpg"
+    client = FakeClient(
+        {"public": [page([make_illust(81), make_illust(82)], cursor=None)], "private": []}
+    )
+    result = await build_service(
+        db, tmp_path, client, FakeDownloader(error_urls={worst})
+    ).run_incremental()
+    assert result.status == "completed"
+    assert result.previews_fetched == 1
+    assert result.previews_failed == 1
+    assert WorksStorage(tmp_path / "works").preview_path(82).exists()
