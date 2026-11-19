@@ -3,6 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pixiv_archive.db.models import Author, Bookmark, Illust, IllustPage, UgoiraMeta
+from pixiv_archive.db.repo import illusts as illusts_repo
 from pixiv_archive.web.auth import require_auth
 from pixiv_archive.web.deps import get_session
 from pixiv_archive.web.schemas import StatsOut
@@ -55,6 +56,13 @@ async def stats(
     thumbs_ready = (
         await session.execute(select(func.count()).where(Illust.thumb_ready.is_(True)))
     ).scalar_one()
+    previews_ready = (
+        await session.execute(
+            select(func.count()).where(Illust.state == "active", Illust.preview_state == "ready")
+        )
+    ).scalar_one()
+    previews_missing = await illusts_repo.count_previews_missing(session)
+    ugoira_meta_missing = await illusts_repo.count_ugoira_meta_missing(session)
     animation_ready = (
         await session.execute(select(func.count()).where(Illust.animation_ready.is_(True)))
     ).scalar_one()
@@ -118,7 +126,10 @@ async def stats(
         pending_pages=page_counts.get("pending", 0),
         total_bytes=int(total_bytes),
         thumbs_ready=int(thumbs_ready),
+        previews_ready=int(previews_ready),
+        previews_missing=int(previews_missing),
         ugoira_count=ugoira_count,
+        ugoira_meta_missing=int(ugoira_meta_missing),
         animation_ready=int(animation_ready),
         by_type=by_type,
         by_restrict=by_restrict,

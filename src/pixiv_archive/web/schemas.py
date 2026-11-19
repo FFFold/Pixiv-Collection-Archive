@@ -142,7 +142,10 @@ class StatsOut(BaseModel):
     pending_pages: int
     total_bytes: int
     thumbs_ready: int
+    previews_ready: int
+    previews_missing: int
     ugoira_count: int
+    ugoira_meta_missing: int
     animation_ready: int
     by_type: dict[str, int]
     by_restrict: dict[str, int]
