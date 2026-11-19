@@ -130,6 +130,7 @@ async def run_maintain(argv: list[str], settings: Settings | None = None) -> int
     await _ensure_schema(settings)
     if args.action == "repair-previews":
         async with open_sync_service(settings) as service:
+            service.set_download_previews(True)
             repair_result = await service.repair_assets(reset_failed=True)
         print(
             f"预览补拉：重置 {repair_result.reset}，成功 {repair_result.previews_fetched}，"

@@ -98,6 +98,19 @@ async def test_sync_endpoint_starts_task(client, monkeypatch):
     assert single["id"] == task_id
 
 
+async def test_sync_rejected_while_maintenance_runs(client):
+    tasks = client._transport.app.state.tasks  # type: ignore[union-attr]
+
+    async def job(context):
+        await asyncio.sleep(0.2)
+        return {}
+
+    task_id = tasks.start("maintenance", job)
+    response = await client.post("/api/sync", json={"mode": "incremental"})
+    assert response.status_code == 409
+    await tasks.wait(task_id)
+
+
 async def test_download_endpoint_starts_task(client, monkeypatch):
     import pixiv_archive.web.routers.tasks as tasks_module
 

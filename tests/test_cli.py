@@ -178,12 +178,19 @@ async def test_run_maintain_repair_previews(monkeypatch, tmp_path, capsys):
     from pixiv_archive.sync.orchestrator import AssetRepairResult
 
     class FakeService:
+        previews_enabled: bool | None = None
+
+        def set_download_previews(self, enabled):
+            self.previews_enabled = enabled
+
         async def repair_assets(self, *, reset_failed=False):
             return AssetRepairResult(reset=1, previews_fetched=2, previews_pending=0)
 
+    service = FakeService()
+
     @asynccontextmanager
     async def fake_open(settings):
-        yield FakeService()
+        yield service
 
     monkeypatch.setattr(cli, "open_sync_service", fake_open)
     settings = _settings(monkeypatch, tmp_path)
@@ -191,3 +198,4 @@ async def test_run_maintain_repair_previews(monkeypatch, tmp_path, capsys):
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "预览补拉" in captured.out
+    assert service.previews_enabled is True

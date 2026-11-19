@@ -14,7 +14,6 @@ from pixiv_archive.media.downloader import ImageDownloader
 from pixiv_archive.media.storage import WorksStorage, atomic_write_bytes
 from pixiv_archive.media.thumbnails import is_valid_image
 from pixiv_archive.pixiv.client import PixivClient
-from pixiv_archive.pixiv.errors import PixivError
 from pixiv_archive.pixiv.models import Illust as PixivIllust
 from pixiv_archive.sync import rank as rank_mod
 from pixiv_archive.sync.unavailable import is_unavailable
@@ -369,7 +368,8 @@ class MetadataSyncService:
             if present:
                 await illusts.mark_previews_ready(session, present)
                 await session.commit()
-            missing = [pid for pid in backlog if pid not in set(present)]
+            present_set = set(present)
+            missing = [pid for pid in backlog if pid not in present_set]
             meta = await illusts.get_meta_json_map(session, missing) if missing else {}
 
         if not missing:
@@ -430,26 +430,32 @@ class MetadataSyncService:
         for pid in backlog:
             try:
                 meta = await self._client.get_ugoira_metadata(pid)
-            except PixivError as exc:
-                logger.warning("ugoira metadata fetch failed for %s: %s", pid, exc)
-                async with self._db.session() as session:
-                    await illusts.record_ugoira_meta_failure(session, pid, error=str(exc))
-                    await session.commit()
-                out.ugoira_failed += 1
+                frames_json = json.dumps(
+                    [frame.model_dump() for frame in meta.frames], ensure_ascii=False
+                )
+            except Exception as exc:  # noqa: BLE001 - one target must not abort the run
+                await self._fail_ugoira_metadata(pid, f"{type(exc).__name__}: {exc}", out)
                 continue
-            frames_json = json.dumps(
-                [frame.model_dump() for frame in meta.frames], ensure_ascii=False
-            )
+            if not meta.zip_url:
+                await self._fail_ugoira_metadata(pid, "no zip url", out)
+                continue
             async with self._db.session() as session:
                 await illusts.upsert_ugoira_meta(
                     session,
                     pid=pid,
-                    zip_url=meta.zip_url or "",
+                    zip_url=meta.zip_url,
                     frames_json=frames_json,
                     frame_count=len(meta.frames),
                 )
                 await session.commit()
             out.ugoira_fetched += 1
+
+    async def _fail_ugoira_metadata(self, pid: int, error: str, out: AssetRepairResult) -> None:
+        logger.warning("ugoira metadata fetch failed for %s: %s", pid, error)
+        async with self._db.session() as session:
+            await illusts.record_ugoira_meta_failure(session, pid, error=error)
+            await session.commit()
+        out.ugoira_failed += 1
 
     @staticmethod
     def _preview_url(meta_json: str | None) -> str | None:

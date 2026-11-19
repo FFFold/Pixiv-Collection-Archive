@@ -10,7 +10,11 @@ from pixiv_archive.db.models import Illust, UgoiraMeta
 from pixiv_archive.db.repo import bookmarks, sync_runs
 from pixiv_archive.media.storage import WorksStorage
 from pixiv_archive.pixiv.errors import NetworkError
-from pixiv_archive.sync.orchestrator import PREVIEW_ATTEMPTS_LIMIT, MetadataSyncService
+from pixiv_archive.sync.orchestrator import (
+    PREVIEW_ATTEMPTS_LIMIT,
+    UGOIRA_META_ATTEMPTS_LIMIT,
+    MetadataSyncService,
+)
 
 
 @pytest.fixture
@@ -351,3 +355,46 @@ async def test_ugoira_metadata_failure_is_retried_on_next_run(db, tmp_path):
     async with db.session() as session:
         meta = await session.get(UgoiraMeta, 50)
     assert (meta.zip_url, meta.meta_attempts) == ("https://i.pximg.net/50.zip", 0)
+
+
+async def test_ugoira_metadata_without_zip_counts_as_failure(db, tmp_path):
+    client = FakeClient(
+        {"public": [page([make_illust(51, type_="ugoira")], cursor=None)], "private": []}
+    )
+    client.ugoira_has_zip = False
+    result = await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+    assert result.status == "completed"
+    assert result.ugoira_meta_fetched == 0
+    assert result.failed_count == 1
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 51)
+    assert (meta.zip_url, meta.meta_attempts) == ("", 1)
+
+
+async def test_ugoira_metadata_without_zip_stops_after_limit(db, tmp_path):
+    for _ in range(UGOIRA_META_ATTEMPTS_LIMIT):
+        client = FakeClient(
+            {"public": [page([make_illust(53, type_="ugoira")], cursor=None)], "private": []}
+        )
+        client.ugoira_has_zip = False
+        await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+
+    again = FakeClient({"public": [], "private": []})
+    await build_service(db, tmp_path, again, FakeDownloader()).run_incremental()
+    assert again.ugoira_calls == []
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 53)
+    assert meta.meta_attempts == UGOIRA_META_ATTEMPTS_LIMIT
+
+
+async def test_ugoira_unexpected_error_does_not_abort_sync(db, tmp_path):
+    client = FakeClient(
+        {"public": [page([make_illust(52, type_="ugoira")], cursor=None)], "private": []}
+    )
+    client.ugoira_error = ValueError("bad payload")
+    result = await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+    assert result.status == "completed"
+    assert result.failed_count == 1
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 52)
+    assert (meta.zip_url, meta.meta_attempts) == ("", 1)

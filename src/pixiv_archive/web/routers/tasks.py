@@ -71,6 +71,8 @@ async def start_sync(
     settings = request.app.state.settings
     if payload.mode not in ("incremental", "full"):
         raise HTTPException(status_code=422, detail="mode must be incremental or full")
+    if any(record.kind == "maintenance" for record in tasks.list_active()):
+        raise HTTPException(status_code=409, detail="维护任务正在运行，请稍后再试")
 
     async def run(context: TaskContext) -> dict[str, Any]:
         async with open_sync_service(settings) as service:

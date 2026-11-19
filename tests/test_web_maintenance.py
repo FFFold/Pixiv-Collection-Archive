@@ -103,6 +103,11 @@ async def test_repair_previews_task(client, monkeypatch):
     from pixiv_archive.sync.orchestrator import AssetRepairResult
 
     class FakeService:
+        previews_enabled: bool | None = None
+
+        def set_download_previews(self, enabled):
+            self.previews_enabled = enabled
+
         async def repair_assets(self, *, reset_failed=False):
             assert reset_failed is True
             return AssetRepairResult(
@@ -114,9 +119,11 @@ async def test_repair_previews_task(client, monkeypatch):
                 ugoira_failed=0,
             )
 
+    service = FakeService()
+
     @asynccontextmanager
     async def fake_open(settings):
-        yield FakeService()
+        yield service
 
     monkeypatch.setattr(maintenance_module, "open_sync_service", fake_open)
     response = await client.post("/api/maintenance/repair-previews")
@@ -125,3 +132,17 @@ async def test_repair_previews_task(client, monkeypatch):
     assert record["status"] == "completed"
     assert record["detail"]["previews_fetched"] == 3
     assert record["detail"]["reset"] == 2
+    assert service.previews_enabled is True
+
+
+async def test_repair_previews_rejected_while_sync_runs(client):
+    tasks = client._transport.app.state.tasks  # type: ignore[union-attr]
+
+    async def job(context):
+        await asyncio.sleep(0.2)
+        return {}
+
+    task_id = tasks.start("sync", job)
+    response = await client.post("/api/maintenance/repair-previews")
+    assert response.status_code == 409
+    await tasks.wait(task_id)

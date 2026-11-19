@@ -77,6 +77,7 @@ class FakeClient:
         self.page_requests: list[tuple[str, int | None]] = []
         self.ugoira_calls: list[int] = []
         self.ugoira_error: Exception | None = None
+        self.ugoira_has_zip = True
         self.ugoira_frames: list[dict[str, object]] = []
 
     async def list_bookmarks(self, restrict: str, *, max_bookmark_id: int | None = None):
@@ -91,7 +92,7 @@ class FakeClient:
         if self.ugoira_error is not None:
             raise self.ugoira_error
         return UgoiraMetadata(
-            zip_url=f"https://i.pximg.net/{illust_id}.zip",
+            zip_url=f"https://i.pximg.net/{illust_id}.zip" if self.ugoira_has_zip else None,
             frames=[UgoiraFrame.model_validate(f) for f in self.ugoira_frames],
         )
 

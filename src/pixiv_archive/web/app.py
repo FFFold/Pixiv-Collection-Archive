@@ -92,7 +92,7 @@ def _make_incremental_job(app: FastAPI) -> Callable[[], Awaitable[None]]:
     async def job() -> None:
         from pixiv_archive.sync.factory import open_sync_service
 
-        if any(record.kind == "sync" for record in app.state.tasks.list_active()):
+        if any(record.kind in ("sync", "maintenance") for record in app.state.tasks.list_active()):
             return
         async with open_sync_service(app.state.settings) as service:
             await service.run_incremental()
@@ -104,7 +104,7 @@ def _make_full_job(app: FastAPI) -> Callable[[], Awaitable[None]]:
     async def job() -> None:
         from pixiv_archive.sync.factory import open_sync_service
 
-        if any(record.kind == "sync" for record in app.state.tasks.list_active()):
+        if any(record.kind in ("sync", "maintenance") for record in app.state.tasks.list_active()):
             return
         async with open_sync_service(app.state.settings) as service:
             await service.run_full()
