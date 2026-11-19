@@ -90,6 +90,21 @@ async def test_stats_endpoint(client):
     assert payload["total_bytes"] == 0
     assert payload["stats_stale"] is True
     assert payload["by_type_bytes"] == {"ugoira": 0, "illust": 0}
+    assert payload["previews_ready"] == 0
+    assert payload["previews_missing"] == 2
+    assert payload["ugoira_meta_missing"] == 0
+
+
+async def test_stats_counts_preview_gaps(client):
+    database = client._transport.app.state.db  # type: ignore[union-attr]
+    async with database.session() as session:
+        await session.execute(
+            Illust.__table__.update().where(Illust.pid == 10).values(preview_state="ready")
+        )
+        await session.commit()
+    payload = (await client.get("/api/stats")).json()
+    assert payload["previews_ready"] == 1
+    assert payload["previews_missing"] == 1
 
 
 async def test_stats_reflects_rebuilt_columns(client):

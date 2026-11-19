@@ -60,6 +60,7 @@ async def test_sync_endpoint_starts_task(client, monkeypatch):
         pages_fetched = 2
         previews_fetched = 3
         previews_failed = 0
+        previews_pending = 4
         failed_count = 0
 
     class FakeService:
@@ -91,9 +92,23 @@ async def test_sync_endpoint_starts_task(client, monkeypatch):
     assert listing[0]["id"] == task_id
     assert listing[0]["status"] == "completed"
     assert listing[0]["detail"]["new_count"] == 3
+    assert listing[0]["detail"]["previews_pending"] == 4
 
     single = (await client.get(f"/api/tasks/{task_id}")).json()
     assert single["id"] == task_id
+
+
+async def test_sync_rejected_while_maintenance_runs(client):
+    tasks = client._transport.app.state.tasks  # type: ignore[union-attr]
+
+    async def job(context):
+        await asyncio.sleep(0.2)
+        return {}
+
+    task_id = tasks.start("maintenance", job)
+    response = await client.post("/api/sync", json={"mode": "incremental"})
+    assert response.status_code == 409
+    await tasks.wait(task_id)
 
 
 async def test_download_endpoint_starts_task(client, monkeypatch):
@@ -163,6 +178,7 @@ async def test_duplicate_sync_rejected(client, monkeypatch):
                     "pages_fetched": 0,
                     "previews_fetched": 0,
                     "previews_failed": 0,
+                    "previews_pending": 0,
                     "failed_count": 0,
                 },
             )()

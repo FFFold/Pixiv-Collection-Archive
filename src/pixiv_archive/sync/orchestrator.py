@@ -4,7 +4,6 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,9 +11,9 @@ from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import utcnow
 from pixiv_archive.db.repo import bookmarks, downloads, illusts, sync_runs
 from pixiv_archive.media.downloader import ImageDownloader
-from pixiv_archive.media.storage import WorksStorage
+from pixiv_archive.media.storage import WorksStorage, atomic_write_bytes
+from pixiv_archive.media.thumbnails import is_valid_image
 from pixiv_archive.pixiv.client import PixivClient
-from pixiv_archive.pixiv.errors import PixivError
 from pixiv_archive.pixiv.models import Illust as PixivIllust
 from pixiv_archive.sync import rank as rank_mod
 from pixiv_archive.sync.unavailable import is_unavailable
@@ -24,6 +23,8 @@ logger = logging.getLogger(__name__)
 ProgressCallback = Callable[[str, int, int, str], None]
 
 RESTRICTS = ("public", "private")
+PREVIEW_ATTEMPTS_LIMIT = 5
+UGOIRA_META_ATTEMPTS_LIMIT = 5
 
 
 @dataclass
@@ -38,10 +39,21 @@ class SyncResult:
     rank_rebuilt_count: int = 0
     previews_fetched: int = 0
     previews_failed: int = 0
+    previews_pending: int = 0
     ugoira_meta_fetched: int = 0
     failed_count: int = 0
     error: str | None = None
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class AssetRepairResult:
+    reset: int = 0
+    previews_fetched: int = 0
+    previews_failed: int = 0
+    previews_pending: int = 0
+    ugoira_fetched: int = 0
+    ugoira_failed: int = 0
 
 
 class MetadataSyncService:
@@ -131,8 +143,6 @@ class MetadataSyncService:
 
             ranks = rank_mod.incremental_ranks(min_rank, len(discovered))
             now = utcnow()
-            preview_targets: list[PixivIllust] = []
-            ugoira_targets: list[PixivIllust] = []
             pending_ranks: dict[int, int] = {
                 illust.pid: rank_value
                 for (illust, _), rank_value in zip(discovered, ranks, strict=True)
@@ -150,6 +160,7 @@ class MetadataSyncService:
                         await illusts.upsert_illust(
                             session, illust, meta_json=self._meta_json(illust)
                         )
+                        self._save_meta(illust, result)
                         rank_value = await bookmarks.get_rank(session, illust.pid)
                         await bookmarks.set_active_rank(
                             session,
@@ -158,9 +169,6 @@ class MetadataSyncService:
                             rank=rank_value if rank_value is not None else 0,
                             now=now,
                         )
-                        preview_targets.append(illust)
-                        if illust.type == "ugoira":
-                            ugoira_targets.append(illust)
                         continue
                     if not unavailable:
                         continue
@@ -182,6 +190,7 @@ class MetadataSyncService:
                         await illusts.upsert_illust(
                             session, illust, meta_json=self._meta_json(illust)
                         )
+                        self._save_meta(illust, result)
                         await bookmarks.set_active_rank(
                             session,
                             pid=illust.pid,
@@ -190,15 +199,12 @@ class MetadataSyncService:
                             now=now,
                         )
                         result.new_count += 1
-                        preview_targets.append(illust)
-                        if illust.type == "ugoira":
-                            ugoira_targets.append(illust)
                     except Exception as exc:  # noqa: BLE001 - keep the batch going
                         result.failed_count += 1
                         result.warnings.append(f"作品 {illust.pid} 元数据写入失败: {exc}")
                 await session.commit()
 
-            await self._finalize(result, preview_targets, ugoira_targets)
+            await self._finalize(result)
             result.status = "cancelled" if self._cancel.is_set() else "completed"
         except Exception as exc:  # noqa: BLE001 - persist failure then re-raise
             result.status = "failed"
@@ -254,8 +260,6 @@ class MetadataSyncService:
             missing = sorted(pid for pid in known_pids if pid not in listed_pids)
 
             now = utcnow()
-            preview_targets: list[PixivIllust] = []
-            ugoira_targets: list[PixivIllust] = []
 
             async with self._db.session() as session:
                 for illust, restrict, pos in listed:
@@ -271,6 +275,7 @@ class MetadataSyncService:
                         await illusts.upsert_illust(
                             session, illust, meta_json=self._meta_json(illust)
                         )
+                        self._save_meta(illust, result)
                         was_known = illust.pid in known_pids
                         await bookmarks.set_active_rank(
                             session,
@@ -284,9 +289,6 @@ class MetadataSyncService:
                                 result.rank_rebuilt_count += 1
                         else:
                             result.new_count += 1
-                        preview_targets.append(illust)
-                        if illust.type == "ugoira":
-                            ugoira_targets.append(illust)
                     except Exception as exc:  # noqa: BLE001 - keep the batch going
                         result.failed_count += 1
                         result.warnings.append(f"作品 {illust.pid} 元数据写入失败: {exc}")
@@ -298,7 +300,7 @@ class MetadataSyncService:
                     )
                 await session.commit()
 
-            await self._finalize(result, preview_targets, ugoira_targets)
+            await self._finalize(result)
             result.status = "cancelled" if self._cancel.is_set() else "completed"
         except Exception as exc:  # noqa: BLE001 - persist failure then re-raise
             result.status = "failed"
@@ -328,68 +330,150 @@ class MetadataSyncService:
         await downloads.skip_jobs_for_pid(session, illust.pid)
         return changed
 
-    async def _finalize(
-        self,
-        result: SyncResult,
-        works: list[PixivIllust],
-        ugoira_works: list[PixivIllust],
-    ) -> None:
-        """Fetch previews and ugoira metadata, then write meta.json snapshots."""
+    async def _finalize(self, result: SyncResult) -> None:
+        repair = await self.repair_assets()
+        result.previews_fetched += repair.previews_fetched
+        result.previews_failed += repair.previews_failed
+        result.previews_pending = repair.previews_pending
+        result.ugoira_meta_fetched += repair.ugoira_fetched
+        result.failed_count += repair.ugoira_failed
+
+    async def repair_assets(self, *, reset_failed: bool = False) -> AssetRepairResult:
+        """Fetch every preview / ugoira metadata row that is not ready yet."""
+        out = AssetRepairResult()
+        if reset_failed:
+            await self._reset_previews(out)
         if self._download_previews:
-            fetched, failed = await self._fetch_previews(works)
-            result.previews_fetched += fetched
-            result.previews_failed += failed
-        ugoira_fetched, ugoira_failed = await self._fetch_ugoira_metadata(ugoira_works)
-        result.ugoira_meta_fetched += ugoira_fetched
-        result.failed_count += ugoira_failed
-        for illust in works:
-            try:
-                payload = illust.model_dump(mode="json", by_alias=True)
-                self._storage.save_meta_json(illust.pid, payload)
-            except OSError as exc:
-                result.warnings.append(f"作品 {illust.pid} meta.json 写入失败: {exc}")
+            await self._repair_previews(out)
+        await self._repair_ugoira_metadata(out)
+        async with self._db.session() as session:
+            out.previews_pending = await illusts.count_previews_missing(session)
+        return out
 
-    async def _fetch_previews(self, works: list[PixivIllust]) -> tuple[int, int]:
-        targets: list[tuple[str, Path]] = []
-        for illust in works:
-            url = illust.preview_url
-            if not url:
-                continue
-            dest = self._storage.preview_path(illust.pid)
-            if dest.exists():
-                continue
-            targets.append((url, dest))
-        if not targets:
-            return 0, 0
-        results = await asyncio.gather(
-            *(self._downloader.fetch_to_file(url, dest) for url, dest in targets)
-        )
-        fetched = sum(1 for ok in results if ok)
-        return fetched, len(results) - fetched
+    async def _reset_previews(self, out: AssetRepairResult) -> None:
+        async with self._db.session() as session:
+            out.reset += await illusts.reset_failed_previews(session)
+            ready = await illusts.get_ready_preview_pids(session)
+            missing = [pid for pid in ready if not self._storage.has_preview(pid)]
+            if missing:
+                out.reset += await illusts.mark_previews_pending(session, missing)
+            await session.commit()
 
-    async def _fetch_ugoira_metadata(self, works: list[PixivIllust]) -> tuple[int, int]:
-        fetched = 0
-        failed = 0
-        for illust in works:
-            try:
-                meta = await self._client.get_ugoira_metadata(illust.pid)
-            except PixivError:
-                failed += 1
-                continue
-            frames_json = json.dumps(
-                [frame.model_dump() for frame in meta.frames], ensure_ascii=False
+    async def _repair_previews(self, out: AssetRepairResult) -> None:
+        async with self._db.session() as session:
+            backlog = await illusts.get_preview_backlog(
+                session, max_attempts=PREVIEW_ATTEMPTS_LIMIT
             )
+            present = [pid for pid in backlog if self._storage.has_preview(pid)]
+            if present:
+                await illusts.mark_previews_ready(session, present)
+                await session.commit()
+            present_set = set(present)
+            missing = [pid for pid in backlog if pid not in present_set]
+            meta = await illusts.get_meta_json_map(session, missing) if missing else {}
+
+        if not missing:
+            return
+
+        targets: list[tuple[int, str]] = []
+        failures: list[tuple[int, str]] = []
+        for pid in missing:
+            url = self._preview_url(meta.get(pid))
+            if url is None:
+                failures.append((pid, "no preview url"))
+            else:
+                targets.append((pid, url))
+
+        outcomes = await asyncio.gather(
+            *(self._download_preview(pid, url) for pid, url in targets),
+            return_exceptions=True,
+        )
+        succeeded: list[int] = []
+        for (pid, _url), outcome in zip(targets, outcomes, strict=True):
+            if outcome is None:
+                succeeded.append(pid)
+            elif isinstance(outcome, str):
+                failures.append((pid, outcome))
+            else:
+                failures.append((pid, f"{type(outcome).__name__}: {outcome}"))
+
+        async with self._db.session() as session:
+            if succeeded:
+                await illusts.mark_previews_ready(session, succeeded)
+            for pid, error in failures:
+                logger.warning("preview fetch failed for %s: %s", pid, error)
+                await illusts.record_preview_failure(
+                    session, pid, error=error, max_attempts=PREVIEW_ATTEMPTS_LIMIT
+                )
+            await session.commit()
+
+        out.previews_fetched += len(succeeded)
+        out.previews_failed += len(failures)
+
+    async def _download_preview(self, pid: int, url: str) -> str | None:
+        try:
+            data = await self._downloader.fetch_bytes(url)
+            if data is None:
+                return "fetch failed"
+            if not is_valid_image(data):
+                return "invalid image data"
+            atomic_write_bytes(self._storage.preview_path(pid), data)
+        except Exception as exc:  # noqa: BLE001 - one target must not abort the batch
+            return f"{type(exc).__name__}: {exc}"
+        return None
+
+    async def _repair_ugoira_metadata(self, out: AssetRepairResult) -> None:
+        async with self._db.session() as session:
+            backlog = await illusts.get_ugoira_meta_backlog(
+                session, max_attempts=UGOIRA_META_ATTEMPTS_LIMIT
+            )
+        for pid in backlog:
+            try:
+                meta = await self._client.get_ugoira_metadata(pid)
+                frames_json = json.dumps(
+                    [frame.model_dump() for frame in meta.frames], ensure_ascii=False
+                )
+            except Exception as exc:  # noqa: BLE001 - one target must not abort the run
+                await self._fail_ugoira_metadata(pid, f"{type(exc).__name__}: {exc}", out)
+                continue
+            if not meta.zip_url:
+                await self._fail_ugoira_metadata(pid, "no zip url", out)
+                continue
             async with self._db.session() as session:
                 await illusts.upsert_ugoira_meta(
                     session,
-                    pid=illust.pid,
-                    zip_url=meta.zip_url or "",
+                    pid=pid,
+                    zip_url=meta.zip_url,
                     frames_json=frames_json,
                     frame_count=len(meta.frames),
                 )
                 await session.commit()
-            fetched += 1
-        return fetched, failed
+            out.ugoira_fetched += 1
+
+    async def _fail_ugoira_metadata(self, pid: int, error: str, out: AssetRepairResult) -> None:
+        logger.warning("ugoira metadata fetch failed for %s: %s", pid, error)
+        async with self._db.session() as session:
+            await illusts.record_ugoira_meta_failure(session, pid, error=error)
+            await session.commit()
+        out.ugoira_failed += 1
+
+    @staticmethod
+    def _preview_url(meta_json: str | None) -> str | None:
+        if not meta_json:
+            return None
+        try:
+            payload = json.loads(meta_json)
+        except ValueError:
+            return None
+        urls = payload.get("image_urls") or {}
+        return urls.get("square_medium") or urls.get("medium")
+
+    def _save_meta(self, illust: PixivIllust, result: SyncResult) -> None:
+        try:
+            payload = illust.model_dump(mode="json", by_alias=True)
+            self._storage.save_meta_json(illust.pid, payload)
+        except OSError as exc:
+            result.warnings.append(f"作品 {illust.pid} meta.json 写入失败: {exc}")
 
     def _meta_json(self, illust: PixivIllust) -> str:
         return json.dumps(illust.model_dump(mode="json"), ensure_ascii=False)

@@ -107,6 +107,18 @@ export function useRepairDownloadState() {
   });
 }
 
+export function useRepairPreviews() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<TaskOut>("/api/maintenance/repair-previews", { method: "POST" }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ["tasks"] });
+      void client.invalidateQueries({ queryKey: ["stats"] });
+    },
+  });
+}
+
 export function useDbCheck() {
   return useMutation({
     mutationFn: () => apiFetch<DbCheckReport>("/api/maintenance/db-check", { method: "POST" }),

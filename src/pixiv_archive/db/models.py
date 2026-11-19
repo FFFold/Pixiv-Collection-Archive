@@ -42,6 +42,9 @@ class Illust(Base):
     byte_size: Mapped[int] = mapped_column(BigInteger, default=0)
     thumb_ready: Mapped[bool] = mapped_column(default=False)
     animation_ready: Mapped[bool] = mapped_column(default=False)
+    preview_state: Mapped[str] = mapped_column(String(16), default="pending")
+    preview_attempts: Mapped[int] = mapped_column(default=0)
+    preview_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     meta_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
@@ -107,6 +110,8 @@ class UgoiraMeta(Base):
     zip_url: Mapped[str] = mapped_column(String(1024), default="")
     frames_json: Mapped[str] = mapped_column(Text, default="[]")
     frame_count: Mapped[int] = mapped_column(default=0)
+    meta_attempts: Mapped[int] = mapped_column(default=0)
+    meta_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class SyncRun(Base):

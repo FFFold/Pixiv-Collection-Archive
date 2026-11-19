@@ -164,7 +164,9 @@ async def resolve_scope(session: AsyncSession, scope: DownloadScope) -> ScopePla
     ugoira_pids = {
         row[0]
         for row in (
-            await session.execute(select(UgoiraMeta.pid).where(UgoiraMeta.pid.in_(pids)))
+            await session.execute(
+                select(UgoiraMeta.pid).where(UgoiraMeta.pid.in_(pids), UgoiraMeta.zip_url != "")
+            )
         ).all()
     }
 

@@ -40,7 +40,7 @@
 | --- | --- |
 | 状态载体 | 列式状态，与 `IllustPage.download_state/attempts/last_error` 现有模式一致 |
 | 封面状态列 | `illust.preview_state`（`pending`/`ready`/`failed`）、`preview_attempts`、`preview_error` |
-| 动图状态列 | `ugoira_meta.meta_attempts`、`meta_error`；`zip_url` 非空且 `frame_count > 0` 视为就绪 |
+| 动图状态列 | `ugoira_meta.meta_attempts`、`meta_error`；`zip_url` 非空视为就绪（下载范围也只检查 `zip_url`，`frame_count` 仅用于转码） |
 | 重试节奏 | 跟随增量同步，每轮最多一次；`preview_attempts` 达到 5 后转 `failed`，停止自动重试 |
 | 手动修复 | 重置 `failed → pending`、`attempts = 0`，并核对 `ready` 作品的文件是否还在（丢失的重新入队），随后立即执行一轮补拉 |
 | 校验 | 预览字节必须通过 `is_valid_image()` 才落盘并置 `ready` |
@@ -105,15 +105,14 @@ ugoira_meta:
 
 ### 4.4 动图元数据队列
 
-1. 查询 `state='active' and type='ugoira'` 且（无 `ugoira_meta` 行，或 `zip_url=''`，或 `frame_count=0`）且 `coalesce(meta_attempts,0) < 5` 的作品。
+1. 查询 `state='active' and type='ugoira'` 且（无 `ugoira_meta` 行，或 `zip_url=''`）且 `coalesce(meta_attempts,0) < 5` 的作品。
 2. 成功：`upsert_ugoira_meta()` 写入 zip/frames，并把 `meta_attempts=0`、`meta_error=NULL`。
 3. 失败：`record_ugoira_meta_failure(pid, error)` 创建/更新一行（保留已有 zip_url），`meta_attempts+1`，达到上限后不再入队。
-4. `download/scope.py` 的 `ugoira_pids` 只选择 `zip_url != '' and frame_count > 0` 的行，避免为失败占位行生成注定失败的 zip/mp4 任务。
+4. `download/scope.py` 的 `ugoira_pids` 只选择 `zip_url != ''` 的行，避免为失败占位行生成注定失败的 zip/mp4 任务；`frame_count` 不参与就绪判定（仅用于转码）。
 
 ### 4.5 下载器可观测性
 
-- `ImageDownloader.on_error` 目前在 `media/downloader.py` 定义但从未调用（死代码）。改为在候选 URL 全部失败后调用一次，参数 `(url, reason)`。
-- `sync/factory.py` 传入 logger 回调（warning），使失败出现在容器日志里。
+- `ImageDownloader.on_error` 目前在 `media/downloader.py` 定义但从未调用（死代码）。改为在候选 URL 全部失败后调用一次，参数 `(url, reason)`；默认回调直接 `logger.warning`，失败因此进入容器日志（factory 无需额外传参）。
 
 ## 5. 对外接口
 
@@ -131,7 +130,7 @@ ugoira_meta:
 
 - `POST /api/maintenance/repair-previews`：任务形式（`TaskManager`/SSE），返回 `TaskOut`。
   - 步骤：`repair_assets(reset_failed=True)` —— 先把 `failed → pending`、`attempts=0`，再用 `get_ready_preview_pids()` + `has_preview()` 核对「状态 ready 但文件丢失」的作品并重置为 `pending`；随后执行一轮补拉；返回 `{reset, previews_fetched, previews_failed, previews_pending, ugoira_fetched, ugoira_failed}`。
-  - 与 sync 任务互斥：sync 正在跑时返回 409（沿用 `TaskManager.start` 的 RuntimeError 处理）。
+  - 与 sync 任务互斥：sync 运行中时 repair-previews 返回 409；repair-previews（或其他维护任务）运行中时 `/api/sync` 同样返回 409，调度任务也会跳过。
 - CLI：`uv run python -m pixiv_archive maintain repair-previews [-y]`，行为同上并打印汇总。
 - 设置页新增「补拉缺失封面」按钮，沿用现有维护按钮的任务/进度展示。
 
@@ -148,8 +147,7 @@ ugoira_meta:
 | `db/models.py` | Illust / UgoiraMeta 新列 |
 | `db/repo/illusts.py` | upsert 显式 pending、预览队列/状态/重置查询、ugoira 失败记录 |
 | `sync/orchestrator.py` | 移除 `preview_targets`/`ugoira_targets` 收集，新增统一补拉与 `repair_assets()` |
-| `sync/factory.py` | 传入 `on_error` 日志回调 |
-| `media/downloader.py` | 调用 `on_error` |
+| `media/downloader.py` | 失败原因回传并默认记 warning 日志 |
 | `download/scope.py` | ugoira 任务只针对就绪元数据 |
 | `web/routers/maintenance.py` | repair-previews 任务 |
 | `web/routers/stats.py`、`web/schemas.py` | 新统计字段 |
@@ -175,5 +173,5 @@ ugoira_meta:
 
 - **首次运行成本**：迁移后第一次增量会对全部作品 stat 一次（万级作品通常 <1s，本地磁盘）；只对缺失的发请求。
 - **永久 404 的封面**：最多重试 5 次后停在 `failed`，避免每 6h 打一次 pixiv；用户可在维护面板重置。
-- **元数据过期**：`meta_json` 里的 `image_urls` 在元数据刷新时更新；若 URL 失效，失败会记录在 `preview_error` 中，重新全量同步刷新元数据后仍可恢复。
+- **元数据过期**：`meta_json` 里的 `image_urls` 在元数据刷新时更新；若 URL 失效，失败会记录在 `preview_error` 中。达到重试上限后不会自动重试，需先手动运行「补拉缺失封面」重置。
 - **失败隔离**：补拉批次内单个目标异常只影响自身；写盘 OSError 不再中断整轮同步。

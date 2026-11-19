@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from fakes import FakeClient, FakeDownloader, make_illust, page
 from pixiv_archive.db.engine import Database
@@ -128,6 +128,11 @@ async def test_full_sync_backfills_missing_previews(db, tmp_path):
     await build_service(db, tmp_path, setup, downloader).run_full()
     storage = WorksStorage(tmp_path / "works")
     storage.preview_path(1).unlink()
+    # preview_state is the queue's source of truth; a missing file is picked up
+    # again after a reset (migration or the manual repair task).
+    async with db.session() as session:
+        await session.execute(update(Illust).where(Illust.pid == 1).values(preview_state="pending"))
+        await session.commit()
 
     again = FakeClient({"public": [page([make_illust(1)], cursor=None)], "private": []})
     downloader2 = FakeDownloader()

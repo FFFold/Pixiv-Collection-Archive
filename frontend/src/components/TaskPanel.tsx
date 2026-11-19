@@ -31,7 +31,10 @@ const KIND_LABELS: Record<string, string> = {
 function detailSummary(task: TaskOut): string {
   const detail = task.detail ?? {};
   if (task.kind === "sync") {
-    return `新增 ${detail.new_count ?? 0} · 页 ${detail.pages_fetched ?? 0} · 预览 ${detail.previews_fetched ?? 0}`;
+    const failed = Number(detail.previews_failed ?? 0);
+    const pending = Number(detail.previews_pending ?? 0);
+    const suffix = `${failed ? `（失败 ${failed}）` : ""}${pending ? ` · 待补 ${pending}` : ""}`;
+    return `新增 ${detail.new_count ?? 0} · 页 ${detail.pages_fetched ?? 0} · 预览 ${detail.previews_fetched ?? 0}${suffix}`;
   }
   if (task.kind === "download") {
     return `页 ${detail.pages_done ?? 0} · 缩略图 ${detail.thumbs_done ?? 0} · 失败 ${detail.failed ?? 0}`;
@@ -42,6 +45,9 @@ function detailSummary(task: TaskOut): string {
   if (task.kind === "maintenance") {
     if ("works" in detail) {
       return `作品 ${detail.works ?? 0} · 共 ${formatBytes(Number(detail.total_bytes ?? 0))}`;
+    }
+    if ("previews_fetched" in detail) {
+      return `封面 成功 ${detail.previews_fetched ?? 0} · 失败 ${detail.previews_failed ?? 0} · 待补 ${detail.previews_pending ?? 0}`;
     }
     return `修正页 ${detail.pages_fixed ?? 0} · 作品 ${detail.works_fixed ?? 0}`;
   }

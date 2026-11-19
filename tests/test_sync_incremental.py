@@ -2,7 +2,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from fakes import FakeClient, FakeDownloader, make_illust, page
 from pixiv_archive.db.engine import Database
@@ -10,7 +10,11 @@ from pixiv_archive.db.models import Illust, UgoiraMeta
 from pixiv_archive.db.repo import bookmarks, sync_runs
 from pixiv_archive.media.storage import WorksStorage
 from pixiv_archive.pixiv.errors import NetworkError
-from pixiv_archive.sync.orchestrator import MetadataSyncService
+from pixiv_archive.sync.orchestrator import (
+    PREVIEW_ATTEMPTS_LIMIT,
+    UGOIRA_META_ATTEMPTS_LIMIT,
+    MetadataSyncService,
+)
 
 
 @pytest.fixture
@@ -209,6 +213,7 @@ async def test_incremental_skips_previews_when_disabled(db, tmp_path):
     result = await service.run_incremental()
     assert downloader.urls == []
     assert result.previews_fetched == 0
+    assert result.previews_pending == 1
 
 
 async def test_incremental_writes_readable_meta_json(db, tmp_path):
@@ -218,3 +223,178 @@ async def test_incremental_writes_readable_meta_json(db, tmp_path):
     assert payload["id"] == 90
     assert payload["title"] == "t90"
     assert payload["user"]["name"] == "artist"
+
+
+async def test_incremental_retries_missing_preview_on_next_run(db, tmp_path):
+    url = "https://i.pximg.net/70_sq.jpg"
+    first = FakeClient({"public": [page([make_illust(70)], cursor=None)], "private": []})
+    r1 = await build_service(db, tmp_path, first, FakeDownloader(fail_urls={url})).run_incremental()
+    assert r1.previews_failed == 1
+    assert r1.previews_pending == 1
+
+    second = FakeClient({"public": [page([make_illust(70)], cursor=None)], "private": []})
+    d2 = FakeDownloader()
+    r2 = await build_service(db, tmp_path, second, d2).run_incremental()
+    assert r2.new_count == 0
+    assert d2.urls == [url]
+    assert r2.previews_fetched == 1
+    assert r2.previews_pending == 0
+    async with db.session() as session:
+        row = await session.get(Illust, 70)
+    assert row.preview_state == "ready"
+
+
+async def test_incremental_marks_existing_preview_ready_without_download(db, tmp_path):
+    setup = FakeClient({"public": [page([make_illust(71)], cursor=None)], "private": []})
+    await build_service(db, tmp_path, setup, FakeDownloader()).run_incremental()
+    async with db.session() as session:
+        await session.execute(
+            update(Illust).where(Illust.pid == 71).values(preview_state="pending")
+        )
+        await session.commit()
+
+    again = FakeClient({"public": [page([make_illust(71)], cursor=None)], "private": []})
+    downloader = FakeDownloader()
+    result = await build_service(db, tmp_path, again, downloader).run_incremental()
+    assert downloader.urls == []
+    assert result.previews_fetched == 0
+    async with db.session() as session:
+        row = await session.get(Illust, 71)
+    assert row.preview_state == "ready"
+
+
+async def test_preview_failures_stop_at_attempt_limit(db, tmp_path):
+    url = "https://i.pximg.net/72_sq.jpg"
+    for _ in range(PREVIEW_ATTEMPTS_LIMIT):
+        client = FakeClient({"public": [page([make_illust(72)], cursor=None)], "private": []})
+        await build_service(db, tmp_path, client, FakeDownloader(fail_urls={url})).run_incremental()
+    async with db.session() as session:
+        row = await session.get(Illust, 72)
+    assert (row.preview_state, row.preview_attempts) == ("failed", PREVIEW_ATTEMPTS_LIMIT)
+
+    again = FakeClient({"public": [page([make_illust(72)], cursor=None)], "private": []})
+    downloader = FakeDownloader()
+    result = await build_service(db, tmp_path, again, downloader).run_incremental()
+    assert downloader.urls == []
+    assert result.previews_pending == 1
+
+
+async def test_repair_assets_reset_requeues_ready_rows_with_missing_files(db, tmp_path):
+    url = "https://i.pximg.net/73_sq.jpg"
+    client = FakeClient({"public": [page([make_illust(73)], cursor=None)], "private": []})
+    service = build_service(db, tmp_path, client, FakeDownloader())
+    await service.run_incremental()
+    storage = WorksStorage(tmp_path / "works")
+    storage.preview_path(73).unlink()
+
+    downloader = FakeDownloader()
+    again = FakeClient({"public": [], "private": []})
+    repair = await build_service(db, tmp_path, again, downloader).repair_assets(reset_failed=True)
+    assert repair.reset == 1
+    assert downloader.urls == [url]
+    assert storage.preview_path(73).exists()
+
+
+def test_preview_url_prefers_square_medium():
+    payload = (
+        '{"image_urls": {"medium": "https://i/medium.jpg", "square_medium": "https://i/sq.jpg"}}'
+    )
+    assert MetadataSyncService._preview_url(payload) == "https://i/sq.jpg"
+    assert MetadataSyncService._preview_url(
+        '{"image_urls": {"medium": "https://i/medium.jpg"}}'
+    ) == ("https://i/medium.jpg")
+    assert MetadataSyncService._preview_url(None) is None
+
+
+async def test_invalid_preview_bytes_are_not_marked_ready(db, tmp_path):
+    url = "https://i.pximg.net/80_sq.jpg"
+    client = FakeClient({"public": [page([make_illust(80)], cursor=None)], "private": []})
+    result = await build_service(
+        db, tmp_path, client, FakeDownloader(corrupt_urls={url})
+    ).run_incremental()
+    assert result.previews_failed == 1
+    assert not WorksStorage(tmp_path / "works").preview_path(80).exists()
+    async with db.session() as session:
+        row = await session.get(Illust, 80)
+    assert row.preview_state == "pending"
+    assert row.preview_attempts == 1
+    assert "invalid" in (row.preview_error or "")
+
+
+async def test_one_failing_preview_does_not_abort_the_batch(db, tmp_path):
+    worst = "https://i.pximg.net/81_sq.jpg"
+    client = FakeClient(
+        {"public": [page([make_illust(81), make_illust(82)], cursor=None)], "private": []}
+    )
+    result = await build_service(
+        db, tmp_path, client, FakeDownloader(error_urls={worst})
+    ).run_incremental()
+    assert result.status == "completed"
+    assert result.previews_fetched == 1
+    assert result.previews_failed == 1
+    assert WorksStorage(tmp_path / "works").preview_path(82).exists()
+
+
+async def test_ugoira_metadata_failure_is_retried_on_next_run(db, tmp_path):
+    first = FakeClient(
+        {"public": [page([make_illust(50, type_="ugoira")], cursor=None)], "private": []}
+    )
+    first.ugoira_error = NetworkError("boom")
+    r1 = await build_service(db, tmp_path, first, FakeDownloader()).run_incremental()
+    assert r1.ugoira_meta_fetched == 0
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 50)
+    assert (meta.zip_url, meta.meta_attempts) == ("", 1)
+
+    second = FakeClient(
+        {"public": [page([make_illust(50, type_="ugoira")], cursor=None)], "private": []}
+    )
+    r2 = await build_service(db, tmp_path, second, FakeDownloader()).run_incremental()
+    assert second.ugoira_calls == [50]
+    assert r2.ugoira_meta_fetched == 1
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 50)
+    assert (meta.zip_url, meta.meta_attempts) == ("https://i.pximg.net/50.zip", 0)
+
+
+async def test_ugoira_metadata_without_zip_counts_as_failure(db, tmp_path):
+    client = FakeClient(
+        {"public": [page([make_illust(51, type_="ugoira")], cursor=None)], "private": []}
+    )
+    client.ugoira_has_zip = False
+    result = await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+    assert result.status == "completed"
+    assert result.ugoira_meta_fetched == 0
+    assert result.failed_count == 1
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 51)
+    assert (meta.zip_url, meta.meta_attempts) == ("", 1)
+
+
+async def test_ugoira_metadata_without_zip_stops_after_limit(db, tmp_path):
+    for _ in range(UGOIRA_META_ATTEMPTS_LIMIT):
+        client = FakeClient(
+            {"public": [page([make_illust(53, type_="ugoira")], cursor=None)], "private": []}
+        )
+        client.ugoira_has_zip = False
+        await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+
+    again = FakeClient({"public": [], "private": []})
+    await build_service(db, tmp_path, again, FakeDownloader()).run_incremental()
+    assert again.ugoira_calls == []
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 53)
+    assert meta.meta_attempts == UGOIRA_META_ATTEMPTS_LIMIT
+
+
+async def test_ugoira_unexpected_error_does_not_abort_sync(db, tmp_path):
+    client = FakeClient(
+        {"public": [page([make_illust(52, type_="ugoira")], cursor=None)], "private": []}
+    )
+    client.ugoira_error = ValueError("bad payload")
+    result = await build_service(db, tmp_path, client, FakeDownloader()).run_incremental()
+    assert result.status == "completed"
+    assert result.failed_count == 1
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 52)
+    assert (meta.zip_url, meta.meta_attempts) == ("", 1)

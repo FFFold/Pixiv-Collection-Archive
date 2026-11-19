@@ -1,3 +1,4 @@
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -10,6 +11,7 @@ from pixiv_archive.maintenance.service import (
     rebuild_storage_stats,
     repair_download_state,
 )
+from pixiv_archive.sync.factory import open_sync_service
 from pixiv_archive.web.auth import require_auth
 from pixiv_archive.web.deps import get_session, get_settings, get_tasks
 from pixiv_archive.web.schemas import MaintenanceResultOut, TaskOut
@@ -89,3 +91,29 @@ async def run_db_check(
 ) -> MaintenanceResultOut:
     report = await db_check(session, _works_dir(request))
     return MaintenanceResultOut(**report)
+
+
+@router.post("/repair-previews", status_code=status.HTTP_202_ACCEPTED, response_model=TaskOut)
+async def start_repair_previews(
+    request: Request,
+    tasks: Annotated[TaskManager, Depends(get_tasks)],  # noqa: B008
+) -> TaskOut:
+    settings = request.app.state.settings
+    if any(record.kind == "sync" for record in tasks.list_active()):
+        raise HTTPException(status_code=409, detail="同步任务正在运行，请稍后再试")
+
+    async def run(context: TaskContext) -> dict[str, Any]:
+        context.progress("previews", 0, 1, "补拉缺失封面")
+        async with open_sync_service(settings) as service:
+            service.set_download_previews(True)
+            result = await service.repair_assets(reset_failed=True)
+        context.progress("previews", 1, 1, "完成")
+        return asdict(result)
+
+    try:
+        task_id = tasks.start("maintenance", run)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record = tasks.get(task_id)
+    assert record is not None
+    return TaskOut(**record.to_dict())

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -8,12 +9,18 @@ import httpx
 
 from pixiv_archive.media.storage import atomic_write_bytes
 from pixiv_archive.pixiv.auth import APP_HEADERS
-from pixiv_archive.pixiv.errors import NetworkError, NotFoundError, PixivError
+from pixiv_archive.pixiv.errors import NetworkError, PixivError
 from pixiv_archive.pixiv.ratelimit import retry_async
 
 PIXIV_IMAGE_HOSTS = frozenset({"i.pximg.net", "i-f.pximg.net", "s.pximg.net"})
 _SCHEME_RE = re.compile(r"^https?://")
 _REFERER = "https://www.pixiv.net/"
+
+logger = logging.getLogger(__name__)
+
+
+def _log_failure(url: str, reason: str) -> None:
+    logger.warning("image fetch failed: %s (%s)", url, reason)
 
 
 def _normalize_mirror(mirror: str | None) -> str | None:
@@ -54,7 +61,7 @@ class ImageDownloader:
         self._client = client
         self._mirror = _normalize_mirror(mirror)
         self._semaphore = asyncio.Semaphore(max(1, concurrency))
-        self._on_error = on_error
+        self._on_error = on_error or _log_failure
 
     def _candidates(self, url: str) -> list[str]:
         mirrored = apply_image_mirror(url, self._mirror)
@@ -64,13 +71,15 @@ class ImageDownloader:
 
     async def fetch_bytes(self, url: str) -> bytes | None:
         async with self._semaphore:
+            reason = "fetch failed"
             for candidate in self._candidates(url):
-                data = await self._fetch_once(candidate)
+                data, reason = await self._fetch_once(candidate)
                 if data is not None:
                     return data
+            self._on_error(url, reason)
             return None
 
-    async def _fetch_once(self, url: str) -> bytes | None:
+    async def _fetch_once(self, url: str) -> tuple[bytes | None, str]:
         async def _attempt() -> httpx.Response:
             try:
                 response = await self._client.get(
@@ -84,15 +93,13 @@ class ImageDownloader:
 
         try:
             response = await retry_async(_attempt, attempts=3, base_delay=0.6)
-        except NotFoundError:
-            return None
-        except NetworkError:
-            return None
-        except PixivError:
-            return None
+        except NetworkError as exc:
+            return None, f"network error: {exc}"
+        except PixivError as exc:
+            return None, f"http error: {exc}"
         if response.status_code >= 300:
-            return None
-        return response.content
+            return None, f"http {response.status_code}"
+        return response.content, ""
 
     async def fetch_to_file(self, url: str, dest: Path) -> bool:
         data = await self.fetch_bytes(url)

@@ -108,6 +108,19 @@ async def test_downloader_retries_transient_errors(tmp_path):
     assert calls["n"] == 3
 
 
+async def test_downloader_reports_final_failure_once():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, request=request)
+
+    errors: list[tuple[str, str]] = []
+    downloader = ImageDownloader(
+        _image_client(handler), on_error=lambda url, reason: errors.append((url, reason))
+    )
+    url = "https://i.pximg.net/missing.jpg"
+    assert await downloader.fetch_bytes(url) is None
+    assert errors == [(url, "http 404")]
+
+
 async def test_downloader_mirror_falls_back_to_official(tmp_path):
     hosts: list[str] = []
 
