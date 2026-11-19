@@ -250,7 +250,6 @@ def _ugoira_pending_condition() -> ColumnElement[bool]:
     return or_(
         UgoiraMeta.pid.is_(None),
         UgoiraMeta.zip_url == "",
-        UgoiraMeta.frame_count == 0,
     )
 
 

@@ -329,3 +329,25 @@ async def test_one_failing_preview_does_not_abort_the_batch(db, tmp_path):
     assert result.previews_fetched == 1
     assert result.previews_failed == 1
     assert WorksStorage(tmp_path / "works").preview_path(82).exists()
+
+
+async def test_ugoira_metadata_failure_is_retried_on_next_run(db, tmp_path):
+    first = FakeClient(
+        {"public": [page([make_illust(50, type_="ugoira")], cursor=None)], "private": []}
+    )
+    first.ugoira_error = NetworkError("boom")
+    r1 = await build_service(db, tmp_path, first, FakeDownloader()).run_incremental()
+    assert r1.ugoira_meta_fetched == 0
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 50)
+    assert (meta.zip_url, meta.meta_attempts) == ("", 1)
+
+    second = FakeClient(
+        {"public": [page([make_illust(50, type_="ugoira")], cursor=None)], "private": []}
+    )
+    r2 = await build_service(db, tmp_path, second, FakeDownloader()).run_incremental()
+    assert second.ugoira_calls == [50]
+    assert r2.ugoira_meta_fetched == 1
+    async with db.session() as session:
+        meta = await session.get(UgoiraMeta, 50)
+    assert (meta.zip_url, meta.meta_attempts) == ("https://i.pximg.net/50.zip", 0)

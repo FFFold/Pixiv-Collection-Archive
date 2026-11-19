@@ -156,6 +156,20 @@ async def test_scope_ugoira_includes_animation_and_zip_jobs(db):
     assert kinds == {"ugoira_zip", "ugoira_mp4", "thumb"}
 
 
+async def test_ugoira_jobs_require_ready_metadata(db):
+    await _seed_illust(db, 7, rank=0, type_="ugoira", page_download_state="done")
+    async with db.session() as session:
+        session.add(UgoiraMeta(pid=7, zip_url="", frames_json="[]", frame_count=0))
+        await session.commit()
+
+    async with db.session() as session:
+        plan = await resolve_scope(session, DownloadScope(kind="selected", pids=[7]))
+    kinds = [kind for _, kind, _ in plan.jobs]
+    assert "ugoira_zip" not in kinds
+    assert "ugoira_mp4" not in kinds
+    assert kinds == ["thumb"]
+
+
 def test_empty_scope_matches_nothing():
     assert empty_scope_matches_nothing(DownloadScope(kind="filter")) is True
     assert empty_scope_matches_nothing(DownloadScope(kind="all_missing")) is False
