@@ -164,3 +164,30 @@ def test_report_sync_includes_pending_previews(capsys):
 
     _report_sync(SyncResult(run_id=1, kind="incremental", previews_pending=3))
     assert "待补 3" in capsys.readouterr().out
+
+
+def test_build_parser_maintain_repair_previews():
+    args = build_parser().parse_args(["maintain", "repair-previews"])
+    assert args.action == "repair-previews"
+
+
+async def test_run_maintain_repair_previews(monkeypatch, tmp_path, capsys):
+    from contextlib import asynccontextmanager
+
+    import pixiv_archive.cli as cli
+    from pixiv_archive.sync.orchestrator import AssetRepairResult
+
+    class FakeService:
+        async def repair_assets(self, *, reset_failed=False):
+            return AssetRepairResult(reset=1, previews_fetched=2, previews_pending=0)
+
+    @asynccontextmanager
+    async def fake_open(settings):
+        yield FakeService()
+
+    monkeypatch.setattr(cli, "open_sync_service", fake_open)
+    settings = _settings(monkeypatch, tmp_path)
+    exit_code = await cli.run_maintain(["maintain", "repair-previews"], settings=settings)
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "预览补拉" in captured.out

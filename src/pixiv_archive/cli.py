@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     maintain = subparsers.add_parser("maintain", help="reconcile DB with the works directory")
     maintain.add_argument(
         "action",
-        choices=("rebuild-stats", "repair-download-state", "db-check"),
+        choices=("rebuild-stats", "repair-download-state", "repair-previews", "db-check"),
         help="maintenance operation",
     )
     maintain.add_argument(
@@ -128,6 +128,15 @@ async def run_maintain(argv: list[str], settings: Settings | None = None) -> int
     settings.ensure_dirs()
 
     await _ensure_schema(settings)
+    if args.action == "repair-previews":
+        async with open_sync_service(settings) as service:
+            repair_result = await service.repair_assets(reset_failed=True)
+        print(
+            f"预览补拉：重置 {repair_result.reset}，成功 {repair_result.previews_fetched}，"
+            f"失败 {repair_result.previews_failed}，待补 {repair_result.previews_pending}，"
+            f"动图 {repair_result.ugoira_fetched}（失败 {repair_result.ugoira_failed}）"
+        )
+        return 0
     db = Database(settings.db_path)
     try:
         async with db.session() as session:

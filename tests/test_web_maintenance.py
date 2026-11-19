@@ -94,3 +94,34 @@ async def test_db_check_returns_report(client):
     payload = response.json()
     assert payload["ok"] is True
     assert payload["issues"] == []
+
+
+async def test_repair_previews_task(client, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    import pixiv_archive.web.routers.maintenance as maintenance_module
+    from pixiv_archive.sync.orchestrator import AssetRepairResult
+
+    class FakeService:
+        async def repair_assets(self, *, reset_failed=False):
+            assert reset_failed is True
+            return AssetRepairResult(
+                reset=2,
+                previews_fetched=3,
+                previews_failed=1,
+                previews_pending=1,
+                ugoira_fetched=0,
+                ugoira_failed=0,
+            )
+
+    @asynccontextmanager
+    async def fake_open(settings):
+        yield FakeService()
+
+    monkeypatch.setattr(maintenance_module, "open_sync_service", fake_open)
+    response = await client.post("/api/maintenance/repair-previews")
+    assert response.status_code == 202
+    record = await _wait(client)
+    assert record["status"] == "completed"
+    assert record["detail"]["previews_fetched"] == 3
+    assert record["detail"]["reset"] == 2
