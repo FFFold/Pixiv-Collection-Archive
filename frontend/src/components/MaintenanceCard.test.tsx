@@ -35,7 +35,7 @@ describe("MaintenanceCard", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     renderCard();
 
-    await userEvent.click(screen.getByRole("button", { name: "重抓封面（改原图比例）" }));
+    await userEvent.click(screen.getByRole("button", { name: "重抓封面" }));
 
     await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
@@ -49,7 +49,7 @@ describe("MaintenanceCard", () => {
     vi.spyOn(window, "confirm").mockReturnValue(false);
     renderCard();
 
-    await userEvent.click(screen.getByRole("button", { name: "重抓封面（改原图比例）" }));
+    await userEvent.click(screen.getByRole("button", { name: "重抓封面" }));
 
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(fetchMock).not.toHaveBeenCalled();
@@ -60,7 +60,7 @@ describe("MaintenanceCard", () => {
     vi.spyOn(window, "confirm").mockReturnValue(true);
     renderCard();
 
-    await userEvent.click(screen.getByRole("button", { name: "重新全量重抓封面" }));
+    await userEvent.click(screen.getByRole("button", { name: "全量重抓封面" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const [, init] = fetchMock.mock.calls.at(-1) ?? [];
