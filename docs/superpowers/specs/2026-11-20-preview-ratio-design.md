@@ -1,7 +1,7 @@
 # 首页封面按原图比例：medium 预览 + 一次性重抓（设计文档）
 
 日期：2026-11-20
-状态：设计待确认
+状态：已实施（2026-11-20），实施计划见 `docs/superpowers/plans/2026-11-20-preview-ratio.md`
 关联：GitHub issue #2；`docs/superpowers/specs/2026-11-19-preview-selfheal-design.md`（封面自愈，PR #1 / v0.2.1）
 
 ## 1. 背景与目标
