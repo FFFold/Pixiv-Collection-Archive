@@ -84,9 +84,12 @@ export default function Stats() {
           label="封面就绪"
           value={data.previews_ready.toLocaleString()}
           hint={
-            data.previews_missing > 0
-              ? `待补 ${data.previews_missing.toLocaleString()}`
-              : "全部就绪"
+            [
+              data.previews_missing > 0 ? `待补 ${data.previews_missing.toLocaleString()}` : null,
+              data.previews_stale > 0 ? `待重抓 ${data.previews_stale.toLocaleString()}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "全部就绪"
           }
         />
         <Card

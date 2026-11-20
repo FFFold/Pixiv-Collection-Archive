@@ -99,6 +99,7 @@ export interface StatsOut {
   thumbs_ready: number;
   previews_ready: number;
   previews_missing: number;
+  previews_stale: number;
   ugoira_count: number;
   ugoira_meta_missing: number;
   animation_ready: number;

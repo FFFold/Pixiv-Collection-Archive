@@ -2,6 +2,7 @@ import {
   useDbCheck,
   usePreviewRepair,
   useRebuildStats,
+  useRefreshPreviews,
   useRepairDownloadState,
   useRepairPreviews,
 } from "../api/mutations";
@@ -11,6 +12,7 @@ export default function MaintenanceCard() {
   const preview = usePreviewRepair();
   const repair = useRepairDownloadState();
   const previews = useRepairPreviews();
+  const refresh = useRefreshPreviews();
   const check = useDbCheck();
 
   return (
@@ -54,6 +56,19 @@ export default function MaintenanceCard() {
         </button>
         <button
           type="button"
+          onClick={() => {
+            const ok = window.confirm(
+              "将重新下载所有未下载作品的封面（约 30–60MB，可中断续跑）。继续？",
+            );
+            if (ok) refresh.mutate();
+          }}
+          disabled={refresh.isPending}
+          className="rounded-md border border-border-subtle px-3 py-1.5 disabled:opacity-50"
+        >
+          重抓封面（改原图比例）
+        </button>
+        <button
+          type="button"
           onClick={() => check.mutate()}
           disabled={check.isPending}
           className="rounded-md border border-border-subtle px-3 py-1.5 disabled:opacity-50"
@@ -84,7 +99,7 @@ export default function MaintenanceCard() {
         </div>
       ) : null}
 
-      {rebuild.isError || repair.isError || previews.isError || check.isError ? (
+      {rebuild.isError || repair.isError || previews.isError || refresh.isError || check.isError ? (
         <div className="mt-3 text-xs text-red-400">操作失败，请查看任务页或服务日志。</div>
       ) : null}
     </div>

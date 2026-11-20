@@ -49,6 +49,9 @@ function detailSummary(task: TaskOut): string {
     if ("previews_fetched" in detail) {
       return `封面 成功 ${detail.previews_fetched ?? 0} · 失败 ${detail.previews_failed ?? 0} · 待补 ${detail.previews_pending ?? 0}`;
     }
+    if ("skipped" in detail) {
+      return `重抓封面 ${detail.fetched ?? 0}/${detail.total ?? 0} · 失败 ${detail.failed ?? 0} · 剩余 ${detail.remaining ?? 0}`;
+    }
     return `修正页 ${detail.pages_fixed ?? 0} · 作品 ${detail.works_fixed ?? 0}`;
   }
   return "";
