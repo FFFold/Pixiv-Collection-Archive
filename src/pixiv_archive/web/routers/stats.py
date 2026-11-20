@@ -62,6 +62,7 @@ async def stats(
         )
     ).scalar_one()
     previews_missing = await illusts_repo.count_previews_missing(session)
+    previews_stale = await illusts_repo.count_previews_stale(session)
     ugoira_meta_missing = await illusts_repo.count_ugoira_meta_missing(session)
     animation_ready = (
         await session.execute(select(func.count()).where(Illust.animation_ready.is_(True)))
@@ -128,6 +129,7 @@ async def stats(
         thumbs_ready=int(thumbs_ready),
         previews_ready=int(previews_ready),
         previews_missing=int(previews_missing),
+        previews_stale=int(previews_stale),
         ugoira_count=ugoira_count,
         ugoira_meta_missing=int(ugoira_meta_missing),
         animation_ready=int(animation_ready),

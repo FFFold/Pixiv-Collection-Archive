@@ -144,6 +144,7 @@ class StatsOut(BaseModel):
     thumbs_ready: int
     previews_ready: int
     previews_missing: int
+    previews_stale: int
     ugoira_count: int
     ugoira_meta_missing: int
     animation_ready: int
