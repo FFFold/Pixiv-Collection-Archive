@@ -61,7 +61,13 @@ class PreviewRefresher:
                 out.resumed = True
             await illusts.mark_previews_stale(session, all_active=False)
             await session.commit()
-            out.total = await illusts.count_previews_stale(session)
+            attemptable = await illusts.get_stale_preview_pids(
+                session, max_attempts=REFRESH_ATTEMPTS_LIMIT
+            )
+            out.total = len(attemptable)
+            out.skipped = await illusts.count_previews_stale_exhausted(
+                session, max_attempts=REFRESH_ATTEMPTS_LIMIT
+            )
 
         if on_progress is not None:
             on_progress("refresh-previews", 0, out.total, f"重抓封面 0/{out.total}")
@@ -109,9 +115,6 @@ class PreviewRefresher:
 
         async with self._db.session() as session:
             out.remaining = await illusts.count_previews_stale(session)
-            out.skipped = await illusts.count_previews_stale_exhausted(
-                session, max_attempts=REFRESH_ATTEMPTS_LIMIT
-            )
         return out
 
     async def _refresh_one(self, pid: int, meta_json: str | None) -> str | None:

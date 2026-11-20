@@ -189,3 +189,12 @@ async def test_refresh_failure_keeps_stale_and_counts_exhausted(db):
     async with db.session() as session:
         assert await illusts.get_stale_preview_pids(session, max_attempts=5) == []
         assert await illusts.count_previews_stale_exhausted(session, max_attempts=5) == 1
+
+
+async def test_stale_deleted_rows_go_back_to_pending(db):
+    await _seed(db, 1, preview_state="stale", state="deleted", thumb_ready=False)
+    async with db.session() as session:
+        assert await illusts.mark_previews_stale(session, all_active=False) == 1
+        await session.commit()
+        row = await session.get(Illust, 1)
+    assert (row.preview_state, row.preview_attempts) == ("pending", 0)

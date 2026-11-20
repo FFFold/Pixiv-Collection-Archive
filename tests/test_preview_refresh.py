@@ -141,3 +141,41 @@ async def test_exhausted_rows_are_skipped(env):
     report = await PreviewRefresher(db=db, storage=storage, downloader=downloader).run()
     assert downloader.urls == []
     assert (report.remaining, report.skipped) == (1, 1)
+
+
+async def test_total_counts_only_attemptable_rows(env):
+    db, storage = env
+    await _seed(db, storage, 1)
+    await _seed(db, storage, 2)
+    async with db.session() as session:
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 1)
+            .values(preview_state="stale", preview_attempts=5)
+        )
+        await session.execute(
+            Illust.__table__.update().where(Illust.pid == 2).values(preview_state="stale")
+        )
+        await session.commit()
+    downloader = FakeDownloader()
+    report = await PreviewRefresher(db=db, storage=storage, downloader=downloader).run()
+    assert (report.total, report.fetched, report.skipped, report.remaining) == (1, 1, 1, 1)
+    assert downloader.urls == [MEDIUM]
+
+
+async def test_restart_re_queues_exhausted_rows(env):
+    db, storage = env
+    await _seed(db, storage, 1)
+    async with db.session() as session:
+        await session.execute(
+            Illust.__table__.update()
+            .where(Illust.pid == 1)
+            .values(preview_state="stale", preview_attempts=5, preview_error="http 404")
+        )
+        await session.commit()
+    downloader = FakeDownloader()
+    report = await PreviewRefresher(db=db, storage=storage, downloader=downloader).run(restart=True)
+    assert (report.total, report.fetched, report.resumed) == (1, 1, False)
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert (row.preview_state, row.preview_attempts, row.preview_error) == ("ready", 0, None)

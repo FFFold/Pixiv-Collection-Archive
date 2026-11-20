@@ -54,4 +54,16 @@ describe("MaintenanceCard", () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("submits a full restart when the user asks for one", async () => {
+    const fetchMock = mockFetch();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderCard();
+
+    await userEvent.click(screen.getByRole("button", { name: "重新全量重抓封面" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const [, init] = fetchMock.mock.calls.at(-1) ?? [];
+    expect(JSON.parse(String(init?.body))).toEqual({ restart: true });
+  });
 });

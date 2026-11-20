@@ -255,18 +255,29 @@ async def mark_previews_stale(session: AsyncSession, *, all_active: bool) -> int
             .where(Illust.state == "active", Illust.thumb_ready.is_(False))
             .values(preview_state="stale", preview_attempts=0, preview_error=None)
         )
-    else:
-        stmt = (
-            update(Illust)
-            .where(
-                Illust.preview_state == "stale",
-                or_(Illust.state != "active", Illust.thumb_ready.is_(True)),
-            )
-            .values(preview_state="ready", preview_error=None)
-        )
-    result = await session.execute(stmt)
+        result = await session.execute(stmt)
+        assert isinstance(result, CursorResult)
+        return result.rowcount or 0
+
+    changed = 0
+    # A local thumb now covers the gallery, so the cover no longer matters.
+    result = await session.execute(
+        update(Illust)
+        .where(Illust.preview_state == "stale", Illust.thumb_ready.is_(True))
+        .values(preview_state="ready", preview_error=None)
+    )
     assert isinstance(result, CursorResult)
-    return result.rowcount or 0
+    changed += result.rowcount or 0
+    # Deleted works go back to pending: a later restore must be able to fetch a
+    # cover again, and "ready" without a file would never be retried.
+    result = await session.execute(
+        update(Illust)
+        .where(Illust.preview_state == "stale", Illust.state != "active")
+        .values(preview_state="pending", preview_attempts=0, preview_error=None)
+    )
+    assert isinstance(result, CursorResult)
+    changed += result.rowcount or 0
+    return changed
 
 
 async def get_stale_preview_pids(session: AsyncSession, *, max_attempts: int) -> list[int]:

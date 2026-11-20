@@ -122,8 +122,11 @@ export function useRepairPreviews() {
 export function useRefreshPreviews() {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      apiFetch<TaskOut>("/api/maintenance/refresh-previews", { method: "POST", body: {} }),
+    mutationFn: (restart: boolean) =>
+      apiFetch<TaskOut>("/api/maintenance/refresh-previews", {
+        method: "POST",
+        body: { restart },
+      }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["tasks"] });
       void client.invalidateQueries({ queryKey: ["stats"] });

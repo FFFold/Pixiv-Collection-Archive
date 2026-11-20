@@ -6,7 +6,7 @@ from sqlalchemy import select, update
 
 from fakes import FakeClient, FakeDownloader, make_illust, page
 from pixiv_archive.db.engine import Database
-from pixiv_archive.db.models import Illust, UgoiraMeta
+from pixiv_archive.db.models import Author, Illust, UgoiraMeta
 from pixiv_archive.db.repo import bookmarks, sync_runs
 from pixiv_archive.media.storage import WorksStorage
 from pixiv_archive.pixiv.errors import NetworkError
@@ -398,3 +398,32 @@ async def test_ugoira_unexpected_error_does_not_abort_sync(db, tmp_path):
     async with db.session() as session:
         meta = await session.get(UgoiraMeta, 52)
     assert (meta.zip_url, meta.meta_attempts) == ("", 1)
+
+
+async def test_incremental_sync_does_not_consume_stale_previews(db, tmp_path):
+    storage = WorksStorage(tmp_path / "works")
+    storage.work_dir(1).mkdir(parents=True)
+    storage.preview_path(1).write_bytes(b"square-cover")
+    async with db.session() as session:
+        session.add(Author(id=1, name="a"))
+        session.add(
+            Illust(
+                pid=1,
+                title="t",
+                author_id=1,
+                preview_state="stale",
+                meta_json=json.dumps({"image_urls": {"medium": "https://i.pximg.net/1_m.jpg"}}),
+            )
+        )
+        await session.commit()
+
+    downloader = FakeDownloader()
+    client = FakeClient({"public": [page([], cursor=None)], "private": []})
+    result = await build_service(db, tmp_path, client, downloader).run_incremental()
+
+    assert result.status == "completed"
+    assert downloader.urls == []
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert (row.state, row.preview_state, row.preview_attempts) == ("active", "stale", 0)
+    assert storage.preview_path(1).read_bytes() == b"square-cover"
