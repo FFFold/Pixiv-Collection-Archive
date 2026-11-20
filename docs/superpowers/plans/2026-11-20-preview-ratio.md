@@ -565,7 +565,7 @@ Expected: FAIL（按钮不存在 / 无 width 属性）
 
 - `types.ts`：`Stats` 加 `previews_stale`；新增 `RefreshPreviewsResult`（若无用可省略，TaskOut detail 为 `Record<string, number>` 时按现有类型处理）。
 - `mutations.ts`：`useRefreshPreviews()`，成功后 invalidate `tasks`、`stats`。
-- `MaintenanceCard.tsx`：按钮「重抓封面（改原图比例）」，`onClick` 先 `window.confirm("将重新下载所有未下载作品的封面（约 30–60MB，可中断续跑）。继续？")`；错误提示条件加入 `refresh.isError`。
+- `MaintenanceCard.tsx`：按钮「重抓封面」/「全量重抓封面」，`onClick` 先 `window.confirm`，文案只说明动作与「可中断续跑」，不写死体积/张数/耗时；错误提示条件加入 `refresh.isError`。
 - `TaskPanel.tsx`：维护分支增加 `"remaining" in u && "resumed" in u` → `重抓封面 ${fetched}/${total} · 失败 ${failed} · 剩余 ${remaining}`。
 - `Stats.tsx`：新增「待重抓封面」行，展示 `previews_stale`。
 - `GalleryCard.tsx`：`<img>` 加 `width={item.width} height={item.height}`。

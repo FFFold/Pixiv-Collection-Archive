@@ -106,7 +106,7 @@ docker compose pull && docker compose up -d    # 升级到最新镜像
 ```
 $DATA_DIR/works/{pid}/
     meta.json         # 作品元数据快照（pixiv 原始字段，可离线重建 DB）
-    preview.jpg       # 收藏列表预览图（约 16KB）
+    preview.jpg       # 收藏列表预览图（pixiv medium，保留原图比例）
     original/000_p0.jpg   # 原图，页序号前缀保证页序
     source.zip        # ugoira 原始帧
     animation.mp4     # ugoira 转码结果

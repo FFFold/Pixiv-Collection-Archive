@@ -57,26 +57,24 @@ export default function MaintenanceCard() {
         <button
           type="button"
           onClick={() => {
-            const ok = window.confirm(
-              "将重新下载所有未下载作品的封面（约 30–60MB，可中断续跑）。继续？",
-            );
+            const ok = window.confirm("将重新下载未下载作品的封面，可中断续跑。继续？");
             if (ok) refresh.mutate(false);
           }}
           disabled={refresh.isPending}
           className="rounded-md border border-border-subtle px-3 py-1.5 disabled:opacity-50"
         >
-          重抓封面（改原图比例）
+          重抓封面
         </button>
         <button
           type="button"
           onClick={() => {
-            const ok = window.confirm("会重新下载全部封面（含已重抓过的），仅在需要重试失败项时使用。继续？");
+            const ok = window.confirm("将重新下载全部封面（含已重抓过的），可中断续跑。继续？");
             if (ok) refresh.mutate(true);
           }}
           disabled={refresh.isPending}
           className="rounded-md border border-border-subtle px-3 py-1.5 disabled:opacity-50"
         >
-          重新全量重抓封面
+          全量重抓封面
         </button>
         <button
           type="button"

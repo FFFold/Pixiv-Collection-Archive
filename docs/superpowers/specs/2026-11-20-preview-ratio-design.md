@@ -8,7 +8,7 @@
 
 首页 `.masonry` 卡片高度由图片自身比例决定，但未下载作品的封面来自 pixiv 的 `square_medium`（540×540 中心裁剪），所以默认首页全部是正方形；已下载作品有本地 `thumb.webp`（原图比例，长边 400），因此只有它们参差。
 
-实测：首页前 60 张全部 1:1、卡片高度均为 371px；`?downloaded=true` 时 20 种比例、高度 243–566px。规模：2178 个 active 作品，磁盘 2212 张 `preview.jpg`（2157 张 540×540），359 张 `thumb.webp`。
+实测（当前部署，仅作证据，不代表其他实例）：首页前 60 张全部 1:1、卡片高度均为 371px；`?downloaded=true` 时 20 种比例、高度 243–566px。规模：2178 个 active 作品，磁盘 2212 张 `preview.jpg`（2157 张 540×540），359 张 `thumb.webp`。
 
 目标：
 
@@ -165,7 +165,7 @@ uv run python -m pixiv_archive maintain refresh-previews [--restart]
 
 - `api/types.ts`：`RefreshPreviewsResult`（`total/fetched/failed/remaining/skipped/resumed`）、`Stats` 增加 `previews_stale`。
 - `api/mutations.ts`：`useRefreshPreviews()` → `POST /api/maintenance/refresh-previews`，成功后 invalidate `tasks`、`stats`。
-- `components/MaintenanceCard.tsx`：新增按钮「重抓封面（改原图比例）」，点击先 `window.confirm("将重新下载所有未下载作品的封面（约 30–60MB，可中断续跑）。继续？")`。
+- `components/MaintenanceCard.tsx`：新增按钮「重抓封面」与「全量重抓封面」，点击先 `window.confirm`，只说明动作与「可中断续跑」，不写死体积/张数/耗时等随部署而变的数字。
 - `components/TaskPanel.tsx`：维护任务结果多一个分支 `"previews_stale_remaining" in detail` → `重抓封面 ${fetched}/${total} · 失败 ${failed} · 剩余 ${remaining}`。
 - `pages/Stats.tsx`：统计行增加「待重抓封面 N」。
 - `components/GalleryCard.tsx`：`<img>` 增加 `width={item.width}` / `height={item.height}`，让浏览器在图片加载前就知道比例，减少多列重排（CSS 仍是 `w-full` + `object-cover`，`h-auto` 已由 preflight 兜住）。
@@ -206,6 +206,6 @@ uv run python -m pixiv_archive maintain refresh-previews [--restart]
 ## 9. 升级与回滚
 
 - 升级后**必须**执行一次 `maintain refresh-previews`（或设置页按钮），历史方形封面才会被替换；不执行则行为与现在一致。
-- 预估成本：约 1800 张 × 几十 KB ≈ 30–60MB，4 并发下一到几分钟。
+- 预估成本（本机实例的实测参考，不代表其他部署）：约 1800 张 × 几十 KB ≈ 30–60MB，4 并发下一到几分钟。
 - 回滚：改回 URL 优先级后同样执行一次 `refresh-previews --restart` 即可回到方形封面；旧方形图不保留副本（这是方案 A 的取舍）。
 - `stale` 只是 `preview_state` 的新取值，降级到旧版本时旧代码把它当作「非 ready」，会走补拉并因文件存在而标 `ready`（无害的自动收敛）。
