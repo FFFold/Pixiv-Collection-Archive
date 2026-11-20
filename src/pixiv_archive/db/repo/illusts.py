@@ -184,7 +184,7 @@ async def mark_previews_ready(session: AsyncSession, pids: list[int]) -> int:
         result = await session.execute(
             update(Illust)
             .where(Illust.pid.in_(chunk))
-            .values(preview_state="ready", preview_error=None)
+            .values(preview_state="ready", preview_attempts=0, preview_error=None)
         )
         assert isinstance(result, CursorResult)
         changed += result.rowcount or 0
