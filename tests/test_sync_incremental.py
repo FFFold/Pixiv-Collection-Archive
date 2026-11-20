@@ -295,14 +295,14 @@ async def test_repair_assets_reset_requeues_ready_rows_with_missing_files(db, tm
     assert storage.preview_path(73).exists()
 
 
-def test_preview_url_prefers_square_medium():
+def test_preview_url_prefers_medium_for_original_ratio():
     payload = (
         '{"image_urls": {"medium": "https://i/medium.jpg", "square_medium": "https://i/sq.jpg"}}'
     )
-    assert MetadataSyncService._preview_url(payload) == "https://i/sq.jpg"
+    assert MetadataSyncService._preview_url(payload) == "https://i/medium.jpg"
     assert MetadataSyncService._preview_url(
-        '{"image_urls": {"medium": "https://i/medium.jpg"}}'
-    ) == ("https://i/medium.jpg")
+        '{"image_urls": {"square_medium": "https://i/sq.jpg"}}'
+    ) == ("https://i/sq.jpg")
     assert MetadataSyncService._preview_url(None) is None
 
 

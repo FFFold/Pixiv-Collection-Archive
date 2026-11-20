@@ -11,6 +11,7 @@ from pixiv_archive.db.engine import Database
 from pixiv_archive.db.models import utcnow
 from pixiv_archive.db.repo import bookmarks, downloads, illusts, sync_runs
 from pixiv_archive.media.downloader import ImageDownloader
+from pixiv_archive.media.preview import preview_url_from_meta
 from pixiv_archive.media.storage import WorksStorage, atomic_write_bytes
 from pixiv_archive.media.thumbnails import is_valid_image
 from pixiv_archive.pixiv.client import PixivClient
@@ -459,14 +460,7 @@ class MetadataSyncService:
 
     @staticmethod
     def _preview_url(meta_json: str | None) -> str | None:
-        if not meta_json:
-            return None
-        try:
-            payload = json.loads(meta_json)
-        except ValueError:
-            return None
-        urls = payload.get("image_urls") or {}
-        return urls.get("square_medium") or urls.get("medium")
+        return preview_url_from_meta(meta_json)
 
     def _save_meta(self, illust: PixivIllust, result: SyncResult) -> None:
         try:

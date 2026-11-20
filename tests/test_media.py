@@ -1,7 +1,11 @@
+import json
+
 import httpx
 
 from pixiv_archive.media.downloader import ImageDownloader, apply_image_mirror
+from pixiv_archive.media.preview import is_placeholder_url, preview_url_from_meta
 from pixiv_archive.media.storage import WorksStorage, atomic_write_bytes
+from pixiv_archive.pixiv.models import Illust as PixivIllust
 
 
 def test_apply_image_mirror_replaces_official_hosts():
@@ -166,3 +170,38 @@ async def test_downloader_does_not_leave_part_files(tmp_path):
     downloader = ImageDownloader(_image_client(handler), mirror=None, concurrency=1)
     await downloader.fetch_to_file("https://i.pximg.net/x.jpg", tmp_path / "x.jpg")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_preview_url_prefers_medium_over_square():
+    meta = json.dumps(
+        {
+            "image_urls": {
+                "medium": "https://i.pximg.net/m.jpg",
+                "square_medium": "https://i.pximg.net/s.jpg",
+            }
+        }
+    )
+    assert preview_url_from_meta(meta) == "https://i.pximg.net/m.jpg"
+    illust = PixivIllust.model_validate(
+        {
+            "id": 1,
+            "user": {"id": 1, "name": "a"},
+            "image_urls": {
+                "medium": "https://i.pximg.net/m.jpg",
+                "square_medium": "https://i.pximg.net/s.jpg",
+            },
+        }
+    )
+    assert illust.preview_url == "https://i.pximg.net/m.jpg"
+
+
+def test_preview_url_falls_back_and_handles_bad_meta():
+    assert preview_url_from_meta(json.dumps({"image_urls": {"square_medium": "s"}})) == "s"
+    assert preview_url_from_meta(None) is None
+    assert preview_url_from_meta("not-json") is None
+    assert preview_url_from_meta(json.dumps({"image_urls": {}})) is None
+
+
+def test_placeholder_url_detection():
+    assert is_placeholder_url("https://s.pximg.net/common/images/limit_unknown_360.png")
+    assert not is_placeholder_url("https://i.pximg.net/c/540x540_70/x_master1200.jpg")
