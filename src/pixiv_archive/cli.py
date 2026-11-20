@@ -6,7 +6,11 @@ import sys
 from pixiv_archive.config import Settings
 from pixiv_archive.download.scope import DownloadScope
 from pixiv_archive.download.worker import DownloadReport
-from pixiv_archive.sync.factory import open_download_worker, open_sync_service
+from pixiv_archive.sync.factory import (
+    open_download_worker,
+    open_preview_refresher,
+    open_sync_service,
+)
 from pixiv_archive.sync.orchestrator import SyncResult
 
 
@@ -52,13 +56,24 @@ def build_parser() -> argparse.ArgumentParser:
     maintain = subparsers.add_parser("maintain", help="reconcile DB with the works directory")
     maintain.add_argument(
         "action",
-        choices=("rebuild-stats", "repair-download-state", "repair-previews", "db-check"),
+        choices=(
+            "rebuild-stats",
+            "repair-download-state",
+            "repair-previews",
+            "refresh-previews",
+            "db-check",
+        ),
         help="maintenance operation",
     )
     maintain.add_argument(
         "--yes",
         action="store_true",
         help="apply repair-download-state without prompting",
+    )
+    maintain.add_argument(
+        "--restart",
+        action="store_true",
+        help="ignore an in-progress refresh-previews queue and re-fetch every cover",
     )
     return parser
 
@@ -136,6 +151,16 @@ async def run_maintain(argv: list[str], settings: Settings | None = None) -> int
             f"预览补拉：重置 {repair_result.reset}，成功 {repair_result.previews_fetched}，"
             f"失败 {repair_result.previews_failed}，待补 {repair_result.previews_pending}，"
             f"动图 {repair_result.ugoira_fetched}（失败 {repair_result.ugoira_failed}）"
+        )
+        return 0
+    if args.action == "refresh-previews":
+        async with open_preview_refresher(settings) as refresher:
+            refresh_report = await refresher.run(restart=args.restart)
+        print(
+            f"封面重抓：总数 {refresh_report.total}，成功 {refresh_report.fetched}，"
+            f"失败 {refresh_report.failed}，剩余 {refresh_report.remaining}"
+            f"（跳过 {refresh_report.skipped}，"
+            f"{'续跑' if refresh_report.resumed else '新开一轮'}）"
         )
         return 0
     db = Database(settings.db_path)

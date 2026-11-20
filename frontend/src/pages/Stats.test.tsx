@@ -16,6 +16,7 @@ const STATS = {
   thumbs_ready: 24,
   previews_ready: 2048,
   previews_missing: 0,
+  previews_stale: 0,
   ugoira_count: 43,
   ugoira_meta_missing: 0,
   animation_ready: 2,
@@ -92,6 +93,12 @@ describe("Stats", () => {
     mockStats({ previews_ready: 2048, previews_missing: 2 });
     renderStats();
     await waitFor(() => expect(screen.getByText("待补 2")).toBeInTheDocument());
+  });
+
+  it("shows how many covers still need the proportional refresh", async () => {
+    mockStats({ previews_ready: 2045, previews_missing: 0, previews_stale: 3 });
+    renderStats();
+    await waitFor(() => expect(screen.getByText("待重抓 3")).toBeInTheDocument());
   });
 
   it("prompts to rebuild stats when stale", async () => {

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pixiv_archive.maintenance.service import (
@@ -11,7 +12,7 @@ from pixiv_archive.maintenance.service import (
     rebuild_storage_stats,
     repair_download_state,
 )
-from pixiv_archive.sync.factory import open_sync_service
+from pixiv_archive.sync.factory import open_preview_refresher, open_sync_service
 from pixiv_archive.web.auth import require_auth
 from pixiv_archive.web.deps import get_session, get_settings, get_tasks
 from pixiv_archive.web.schemas import MaintenanceResultOut, TaskOut
@@ -108,6 +109,38 @@ async def start_repair_previews(
             service.set_download_previews(True)
             result = await service.repair_assets(reset_failed=True)
         context.progress("previews", 1, 1, "完成")
+        return asdict(result)
+
+    try:
+        task_id = tasks.start("maintenance", run)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    record = tasks.get(task_id)
+    assert record is not None
+    return TaskOut(**record.to_dict())
+
+
+class RefreshPreviewsRequest(BaseModel):
+    restart: bool = False
+
+
+@router.post("/refresh-previews", status_code=status.HTTP_202_ACCEPTED, response_model=TaskOut)
+async def start_refresh_previews(
+    request: Request,
+    tasks: Annotated[TaskManager, Depends(get_tasks)],  # noqa: B008
+    body: RefreshPreviewsRequest | None = None,
+) -> TaskOut:
+    settings = request.app.state.settings
+    if any(record.kind == "sync" for record in tasks.list_active()):
+        raise HTTPException(status_code=409, detail="同步任务正在运行，请稍后再试")
+    restart = body.restart if body is not None else False
+
+    async def run(context: TaskContext) -> dict[str, Any]:
+        def progress(phase: str, done: int, total: int, message: str) -> None:
+            context.progress(phase, done, total, message)
+
+        async with open_preview_refresher(settings) as refresher:
+            result = await refresher.run(restart=restart, on_progress=progress)
         return asdict(result)
 
     try:

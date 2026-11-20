@@ -28,6 +28,8 @@ export default function GalleryCard({ item, selected, onToggle }: Props) {
         <img
           src={item.thumb_url}
           alt={item.title}
+          width={item.width}
+          height={item.height}
           loading="lazy"
           data-fallback="false"
           onError={(event) => {

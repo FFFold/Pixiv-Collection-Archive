@@ -60,7 +60,7 @@ class Illust(BaseModel):
 
     @property
     def preview_url(self) -> str | None:
-        return self.image_urls.get("square_medium") or self.image_urls.get("medium")
+        return self.image_urls.get("medium") or self.image_urls.get("square_medium")
 
 
 class BookmarkPage(BaseModel):

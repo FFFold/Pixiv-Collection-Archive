@@ -199,3 +199,39 @@ async def test_run_maintain_repair_previews(monkeypatch, tmp_path, capsys):
     assert exit_code == 0
     assert "预览补拉" in captured.out
     assert service.previews_enabled is True
+
+
+def test_build_parser_maintain_refresh_previews():
+    args = build_parser().parse_args(["maintain", "refresh-previews", "--restart"])
+    assert args.action == "refresh-previews"
+    assert args.restart is True
+
+
+async def test_run_maintain_refresh_previews(monkeypatch, tmp_path, capsys):
+    from contextlib import asynccontextmanager
+
+    import pixiv_archive.cli as cli_module
+    import pixiv_archive.sync.factory as factory_module
+    from pixiv_archive.maintenance.preview_refresh import RefreshReport
+
+    async def noop_schema(settings):
+        return None
+
+    class FakeRefresher:
+        async def run(self, *, restart=False, on_progress=None):
+            assert restart is True
+            return RefreshReport(
+                total=2, fetched=1, failed=1, remaining=1, skipped=0, resumed=False
+            )
+
+    @asynccontextmanager
+    async def fake_open(settings):
+        yield FakeRefresher()
+
+    monkeypatch.setattr(factory_module, "_ensure_schema", noop_schema)
+    monkeypatch.setattr(cli_module, "open_preview_refresher", fake_open)
+    code = await cli_module.run_maintain(
+        ["maintain", "refresh-previews", "--restart"], _settings(monkeypatch, tmp_path)
+    )
+    assert code == 0
+    assert "总数 2" in capsys.readouterr().out

@@ -146,3 +146,42 @@ async def test_repair_previews_rejected_while_sync_runs(client):
     response = await client.post("/api/maintenance/repair-previews")
     assert response.status_code == 409
     await tasks.wait(task_id)
+
+
+async def test_refresh_previews_task(client, monkeypatch):
+    from contextlib import asynccontextmanager
+
+    import pixiv_archive.web.routers.maintenance as maintenance_module
+    from pixiv_archive.maintenance.preview_refresh import RefreshReport
+
+    class FakeRefresher:
+        async def run(self, *, restart=False, on_progress=None):
+            assert restart is True
+            return RefreshReport(
+                total=4, fetched=3, failed=1, remaining=1, skipped=0, resumed=False
+            )
+
+    @asynccontextmanager
+    async def fake_open(settings):
+        yield FakeRefresher()
+
+    monkeypatch.setattr(maintenance_module, "open_preview_refresher", fake_open)
+    response = await client.post("/api/maintenance/refresh-previews", json={"restart": True})
+    assert response.status_code == 202
+    record = await _wait(client)
+    assert record["status"] == "completed"
+    assert record["detail"]["remaining"] == 1
+    assert record["detail"]["fetched"] == 3
+
+
+async def test_refresh_previews_rejected_while_sync_runs(client):
+    tasks = client._transport.app.state.tasks  # type: ignore[union-attr]
+
+    async def job(context):
+        await asyncio.sleep(0.2)
+        return {}
+
+    task_id = tasks.start("sync", job)
+    response = await client.post("/api/maintenance/refresh-previews")
+    assert response.status_code == 409
+    await tasks.wait(task_id)

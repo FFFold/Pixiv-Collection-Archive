@@ -150,12 +150,16 @@ def _chunks(pids: list[int], size: int = _PID_CHUNK) -> list[list[int]]:
 
 
 async def get_preview_backlog(session: AsyncSession, *, max_attempts: int) -> list[int]:
-    """Active illusts whose preview is not ready and still has retries left."""
+    """Active illusts whose preview is missing and still has retries left.
+
+    ``stale`` rows are excluded: they already have a cover and are handled by
+    the manual refresh queue, not by sync.
+    """
     rows = await session.execute(
         select(Illust.pid)
         .where(
             Illust.state == "active",
-            Illust.preview_state != "ready",
+            Illust.preview_state.in_(("pending", "failed")),
             Illust.preview_attempts < max_attempts,
         )
         .order_by(Illust.pid)
@@ -180,7 +184,7 @@ async def mark_previews_ready(session: AsyncSession, pids: list[int]) -> int:
         result = await session.execute(
             update(Illust)
             .where(Illust.pid.in_(chunk))
-            .values(preview_state="ready", preview_error=None)
+            .values(preview_state="ready", preview_attempts=0, preview_error=None)
         )
         assert isinstance(result, CursorResult)
         changed += result.rowcount or 0
@@ -225,14 +229,104 @@ async def record_preview_failure(
 
 
 async def count_previews_missing(session: AsyncSession) -> int:
+    """Active illusts without a usable cover at all."""
     return int(
         (
             await session.execute(
                 select(func.count())
                 .select_from(Illust)
-                .where(Illust.state == "active", Illust.preview_state != "ready")
+                .where(Illust.state == "active", Illust.preview_state.in_(("pending", "failed")))
             )
         ).scalar_one()
+    )
+
+
+async def mark_previews_stale(session: AsyncSession, *, all_active: bool) -> int:
+    """Mark covers for a proportional re-fetch, or restore rows that no longer need it.
+
+    ``all_active=True`` re-queues every active work that has no local
+    ``thumb.webp`` (already downloaded works keep their proportional thumb).
+    ``all_active=False`` restores ``stale`` rows that have since been downloaded
+    or deleted, so the queue never grows stale entries.
+    """
+    if all_active:
+        stmt = (
+            update(Illust)
+            .where(Illust.state == "active", Illust.thumb_ready.is_(False))
+            .values(preview_state="stale", preview_attempts=0, preview_error=None)
+        )
+        result = await session.execute(stmt)
+        assert isinstance(result, CursorResult)
+        return result.rowcount or 0
+
+    changed = 0
+    # A local thumb now covers the gallery, so the cover no longer matters.
+    result = await session.execute(
+        update(Illust)
+        .where(Illust.preview_state == "stale", Illust.thumb_ready.is_(True))
+        .values(preview_state="ready", preview_error=None)
+    )
+    assert isinstance(result, CursorResult)
+    changed += result.rowcount or 0
+    # Deleted works go back to pending: a later restore must be able to fetch a
+    # cover again, and "ready" without a file would never be retried.
+    result = await session.execute(
+        update(Illust)
+        .where(Illust.preview_state == "stale", Illust.state != "active")
+        .values(preview_state="pending", preview_attempts=0, preview_error=None)
+    )
+    assert isinstance(result, CursorResult)
+    changed += result.rowcount or 0
+    return changed
+
+
+async def get_stale_preview_pids(session: AsyncSession, *, max_attempts: int) -> list[int]:
+    rows = await session.execute(
+        select(Illust.pid)
+        .where(
+            Illust.state == "active",
+            Illust.preview_state == "stale",
+            Illust.preview_attempts < max_attempts,
+        )
+        .order_by(Illust.pid)
+    )
+    return [int(row[0]) for row in rows]
+
+
+async def count_previews_stale(session: AsyncSession) -> int:
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Illust)
+                .where(Illust.state == "active", Illust.preview_state == "stale")
+            )
+        ).scalar_one()
+    )
+
+
+async def count_previews_stale_exhausted(session: AsyncSession, *, max_attempts: int) -> int:
+    return int(
+        (
+            await session.execute(
+                select(func.count())
+                .select_from(Illust)
+                .where(
+                    Illust.state == "active",
+                    Illust.preview_state == "stale",
+                    Illust.preview_attempts >= max_attempts,
+                )
+            )
+        ).scalar_one()
+    )
+
+
+async def record_refresh_failure(session: AsyncSession, pid: int, *, error: str) -> None:
+    """Record a failed proportional re-fetch without leaving the stale queue."""
+    await session.execute(
+        update(Illust)
+        .where(Illust.pid == pid)
+        .values(preview_attempts=Illust.preview_attempts + 1, preview_error=error[:500])
     )
 
 

@@ -22,6 +22,7 @@ async def _seed(
     type_="illust",
     preview_state="pending",
     preview_attempts=0,
+    thumb_ready=False,
     meta_json=None,
 ):
     async with db.session() as session:
@@ -36,6 +37,7 @@ async def _seed(
                 state=state,
                 preview_state=preview_state,
                 preview_attempts=preview_attempts,
+                thumb_ready=thumb_ready,
                 meta_json=meta_json,
             )
         )
@@ -143,3 +145,56 @@ async def test_ugoira_backlog_skips_ready_rows(db):
         await session.commit()
     async with db.session() as session:
         assert await illusts.get_ugoira_meta_backlog(session, max_attempts=5) == []
+
+
+async def test_preview_backlog_ignores_stale_rows(db):
+    await _seed(db, 1, preview_state="stale")
+    await _seed(db, 2, preview_state="pending")
+    async with db.session() as session:
+        assert await illusts.get_preview_backlog(session, max_attempts=5) == [2]
+        assert await illusts.count_previews_missing(session) == 1
+        assert await illusts.count_previews_stale(session) == 1
+
+
+async def test_mark_previews_stale_marks_only_undownloaded_active(db):
+    await _seed(db, 1, preview_state="ready", thumb_ready=False)
+    await _seed(db, 2, preview_state="ready", thumb_ready=True)
+    await _seed(db, 3, state="deleted", thumb_ready=False)
+    async with db.session() as session:
+        assert await illusts.mark_previews_stale(session, all_active=True) == 1
+        await session.commit()
+        row = await session.get(Illust, 1)
+    assert (row.preview_state, row.preview_attempts, row.preview_error) == ("stale", 0, None)
+
+
+async def test_stale_rows_with_thumb_become_ready_again(db):
+    await _seed(db, 1, preview_state="stale", thumb_ready=True)
+    await _seed(db, 2, preview_state="stale", thumb_ready=False)
+    async with db.session() as session:
+        assert await illusts.mark_previews_stale(session, all_active=False) == 1
+        await session.commit()
+        fixed = await session.get(Illust, 1)
+        kept = await session.get(Illust, 2)
+    assert fixed.preview_state == "ready"
+    assert kept.preview_state == "stale"
+
+
+async def test_refresh_failure_keeps_stale_and_counts_exhausted(db):
+    await _seed(db, 1, preview_state="stale", preview_attempts=4)
+    async with db.session() as session:
+        await illusts.record_refresh_failure(session, 1, error="http 404")
+        await session.commit()
+        row = await session.get(Illust, 1)
+    assert (row.preview_state, row.preview_attempts, row.preview_error) == ("stale", 5, "http 404")
+    async with db.session() as session:
+        assert await illusts.get_stale_preview_pids(session, max_attempts=5) == []
+        assert await illusts.count_previews_stale_exhausted(session, max_attempts=5) == 1
+
+
+async def test_stale_deleted_rows_go_back_to_pending(db):
+    await _seed(db, 1, preview_state="stale", state="deleted", thumb_ready=False)
+    async with db.session() as session:
+        assert await illusts.mark_previews_stale(session, all_active=False) == 1
+        await session.commit()
+        row = await session.get(Illust, 1)
+    assert (row.preview_state, row.preview_attempts) == ("pending", 0)

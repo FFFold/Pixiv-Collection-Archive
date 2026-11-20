@@ -70,4 +70,11 @@ describe("GalleryCard", () => {
     expect(image.dataset.fallback).toBe("true");
     expect(image).toHaveAttribute("src", expect.stringContaining("data:image/svg+xml"));
   });
+
+  it("exposes the original aspect ratio before the image loads", () => {
+    renderCard(ITEM);
+    const image = screen.getByRole("img");
+    expect(image).toHaveAttribute("width", "1200");
+    expect(image).toHaveAttribute("height", "800");
+  });
 });

@@ -31,6 +31,7 @@
 | **失效检测** | 识别 pixiv 的删除/私有占位图（`limit_*` 或 `user.id == 0`）→ `state=deleted`，**不覆盖**已有元数据与文件；作品恢复后自动还原为 `active` |
 | **两阶段解耦** | 阶段 A 快速建索引（元数据 + 预览图）→ 阶段 B 按范围分批下载原图；下载阶段**完全不调用 pixiv API** |
 | **封面自愈** | 每次同步都会补拉未就绪的预览图与动图元数据；失败最多重试 5 次，统计页与任务页可见，设置页可一键重置并立即补拉 |
+| **封面比例** | 封面取 pixiv `medium`（保留原图比例），首页瀑布流按真实比例排布；存量方形封面用一次 `maintain refresh-previews` 重抓，可中断续跑、失败保留旧图 |
 | **断点续传** | 作业持久化在 `download_job` 表，中断或进程崩溃后重跑自动续传（含遗留的 `running` 作业） |
 | **ugoira 动图** | 保留原始帧 `source.zip`，并用 ffmpeg 转码为 `animation.mp4`（无 ffmpeg 时保留 zip 并标记 skipped） |
 | **画廊检索** | 多标签 AND、多作者、页数/收藏数/浏览数区间、R-18、下载状态、已取消、已失效；支持多种排序与展示序号 |
@@ -96,6 +97,8 @@ docker compose pull && docker compose up -d    # 升级到最新镜像
 - 全量模式重建 rank、标记被取消收藏的 pid，并逐个检查作品是否为占位图；
 - 每次同步收尾都会补拉「未就绪」的封面与动图元数据（`preview_state` / `meta_attempts`）：
   新作品同轮生效，历史缺失无需重跑全量；网络波动导致的失败会留到下一轮重试，最多 5 次；
+- 封面默认取 pixiv `medium`（保留原图比例）而不是 `square_medium`（1:1 裁剪），首页瀑布流因此能还原作品比例；
+  存量方形封面用一次 `maintain refresh-previews` 重抓，任务可中断续跑，远端图片失效时保留旧封面；
 - 每个作品落一份 `meta.json` 原始快照，即便 DB 丢失也可离线重建。
 
 **阶段 B · 图片下载** 只消费阶段 A 已落库的 URL，按范围解析出具体作业后并发下载，可随时中断续传。
@@ -172,6 +175,7 @@ uv run python -m pixiv_archive maintain rebuild-stats
 uv run python -m pixiv_archive maintain db-check
 uv run python -m pixiv_archive maintain repair-download-state --yes
 uv run python -m pixiv_archive maintain repair-previews     # 重置失败计数并立即补拉封面/动图元数据
+uv run python -m pixiv_archive maintain refresh-previews    # 按原图比例重抓存量封面（可中断续跑，--restart 重新全量）
 ```
 
 > 升级到带体积统计列的版本后，旧的 `/api/stats` 体积显示为 0 属正常现象，
@@ -204,6 +208,7 @@ uv run python -m pixiv_archive maintain repair-previews     # 重置失败计数
 | GET | `/api/maintenance/repair-download-state/preview` | 预览下载状态修复（只读） |
 | POST | `/api/maintenance/repair-download-state` | 执行下载状态修复（后台任务） |
 | POST | `/api/maintenance/repair-previews` | 重置失败计数并立即补拉缺失封面/动图元数据（后台任务） |
+| POST | `/api/maintenance/refresh-previews` | 按原图比例重抓存量封面，`{"restart": true}` 重新全量（后台任务） |
 | POST | `/api/maintenance/db-check` | 数据库体检（只读报告） |
 | GET | `/api/health` | 健康检查（供容器探针使用） |
 
@@ -232,6 +237,7 @@ frontend/         React 19 + Tailwind 4，构建产物提交到 web/static/
 
 - 设计文档：`docs/superpowers/specs/2026-09-20-pixiv-collection-archive-design.md`
 - 封面/动图元数据自愈设计：`docs/superpowers/specs/2026-11-19-preview-selfheal-design.md`
+- 封面按原图比例重抓设计：`docs/superpowers/specs/2026-11-20-preview-ratio-design.md`
 - 实施计划：`docs/superpowers/plans/`
 - 开发约定与环境细节：`AGENTS.md`
 - 许可证：[AGPL-3.0](LICENSE)
