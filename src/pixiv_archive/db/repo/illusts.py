@@ -250,9 +250,15 @@ async def mark_previews_stale(session: AsyncSession, *, all_active: bool) -> int
     or deleted, so the queue never grows stale entries.
     """
     if all_active:
+        # Only works that already have a cover (or are already queued): pending/
+        # failed rows have no image at all and stay owned by the sync backlog.
         stmt = (
             update(Illust)
-            .where(Illust.state == "active", Illust.thumb_ready.is_(False))
+            .where(
+                Illust.state == "active",
+                Illust.thumb_ready.is_(False),
+                Illust.preview_state.in_(("ready", "stale")),
+            )
             .values(preview_state="stale", preview_attempts=0, preview_error=None)
         )
         result = await session.execute(stmt)

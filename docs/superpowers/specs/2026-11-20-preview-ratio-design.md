@@ -104,7 +104,7 @@ class PreviewRefresher:          # 持有 db / storage / downloader
 `db/repo/illusts.py` 新增：
 
 - `mark_previews_stale(session, *, all_active: bool) -> int`
-  - `all_active=True`（新开一轮或 `--restart`）：`UPDATE illust SET preview_state='stale', preview_attempts=0, preview_error=NULL WHERE state='active' AND thumb_ready=0`。
+  - `all_active=True`（新开一轮或 `--restart`）：`UPDATE illust SET preview_state='stale', preview_attempts=0, preview_error=NULL WHERE state='active' AND thumb_ready=0 AND preview_state IN ('ready','stale')`。只接管**已经有封面**的作品；`pending`/`failed`（从未有过封面）留给同步补拉，避免 `previews_missing` 被吞掉。
   - `all_active=False`（收尾清理）：只把不再符合条件的行还原：`preview_state='stale' AND (state != 'active' OR thumb_ready=1)` → `ready`。
 - `get_stale_preview_pids(session, *, max_attempts: int) -> list[int]`：`state='active' AND preview_state='stale' AND preview_attempts < 5 ORDER BY pid`。
 - `count_previews_stale(session) -> int`：`state='active' AND preview_state='stale'`。

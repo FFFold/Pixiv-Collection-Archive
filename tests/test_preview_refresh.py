@@ -36,6 +36,7 @@ async def _seed(db, storage, pid, *, thumb_ready=False, meta_urls=None, preview=
                 author_id=1,
                 state="active",
                 thumb_ready=thumb_ready,
+                preview_state="ready" if preview is not None else "pending",
                 meta_json=meta,
             )
         )
@@ -179,3 +180,15 @@ async def test_restart_re_queues_exhausted_rows(env):
     async with db.session() as session:
         row = await session.get(Illust, 1)
     assert (row.preview_state, row.preview_attempts, row.preview_error) == ("ready", 0, None)
+
+
+async def test_coverless_rows_stay_with_sync(env):
+    db, storage = env
+    await _seed(db, storage, 1, preview=None)
+    downloader = FakeDownloader()
+    report = await PreviewRefresher(db=db, storage=storage, downloader=downloader).run()
+    assert report.total == 0
+    assert downloader.urls == []
+    async with db.session() as session:
+        row = await session.get(Illust, 1)
+    assert row.preview_state == "pending"
