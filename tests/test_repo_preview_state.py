@@ -191,6 +191,24 @@ async def test_refresh_failure_keeps_stale_and_counts_exhausted(db):
         assert await illusts.count_previews_stale_exhausted(session, max_attempts=5) == 1
 
 
+async def test_mark_previews_stale_leaves_coverless_rows_to_sync(db):
+    await _seed(db, 1, preview_state="pending")
+    await _seed(db, 2, preview_state="failed", preview_attempts=5)
+    await _seed(db, 3, preview_state="ready")
+    await _seed(db, 4, preview_state="stale", preview_attempts=3)
+    async with db.session() as session:
+        assert await illusts.mark_previews_stale(session, all_active=True) == 2
+        await session.commit()
+        rows = {pid: await session.get(Illust, pid) for pid in (1, 2, 3, 4)}
+    assert (rows[1].preview_state, rows[1].preview_attempts) == ("pending", 0)
+    assert (rows[2].preview_state, rows[2].preview_attempts) == ("failed", 5)
+    assert (rows[3].preview_state, rows[3].preview_attempts) == ("stale", 0)
+    assert (rows[4].preview_state, rows[4].preview_attempts) == ("stale", 0)
+    async with db.session() as session:
+        assert await illusts.count_previews_missing(session) == 2
+        assert await illusts.count_previews_stale(session) == 2
+
+
 async def test_stale_deleted_rows_go_back_to_pending(db):
     await _seed(db, 1, preview_state="stale", state="deleted", thumb_ready=False)
     async with db.session() as session:
